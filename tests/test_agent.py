@@ -1,99 +1,64 @@
-"""The hand-written loop with tools, using a fake model client (no network)."""
+"""The hand-written agent loop."""
 
-from autodocs.agent import honest_ticket_check, run_loop
-from autodocs.llm import Message, ModelReply, ToolCall, Usage
-from autodocs.practice_tools import count_lines, list_directory
+import json
+
+from autodocs.agent import run_agent
 from autodocs.tools import Tool
+from autodocs.writeup import Writeup
 
-TOOLS = [Tool.from_function(count_lines), Tool.from_function(list_directory)]
-
-
-def text_reply(text: str) -> ModelReply:
-    """A scripted final answer."""
-    return ModelReply(text, [], Usage(1000, 10), Message(role="model", text=text))
+ANSWER = json.dumps({
+    "title": "feat: x", "summary": "s", "changes": ["c"], "functions": [],
+    "release_note": "", "could_not_determine": []})
 
 
-def calls_reply(*calls: ToolCall) -> ModelReply:
-    """A scripted turn that asks for tools."""
-    return ModelReply("", list(calls), Usage(1000, 10),
-                      Message(role="model", tool_calls=list(calls)))
+def count_lines(path: str) -> int:
+    """Count lines in a file."""
+    return 3
 
 
-class FakeClient:
-    """Replays scripted replies and records the conversation it was sent."""
-
-    model = "gemini-3.5-flash-lite"
-
-    def __init__(self, replies: list[ModelReply]):
-        """Script the replies, in order (the last one repeats)."""
-        self.replies = replies
-        self.seen: list[list[Message]] = []
-
-    def reply(self, system, history, tools):
-        """Return the next scripted reply."""
-        self.seen.append(list(history))
-        return self.replies[min(len(self.seen) - 1, len(self.replies) - 1)]
-
-    def count_tokens(self, history):
-        """Pretend count."""
-        return 42
+def test_stops_on_final_answer(fake_client):
+    """A reply with no tool calls that fits the schema ends the run as done."""
+    client = fake_client([[("count_lines", {"path": "a"})], ANSWER])
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, log=lambda _: None)
+    assert run.stop_reason == "done"
+    assert run.steps == 2
+    assert isinstance(run.writeup, Writeup)
+    assert run.usage.input_tokens == 2000
+    assert run.cost_usd == (2000 * 0.30 + 200 * 2.50) / 1_000_000
 
 
-def quiet(_):
-    """Swallow log lines."""
+def test_step_cap_stops_a_runaway_loop(fake_client):
+    """A model that never stops asking is cut off at max_steps."""
+    client = fake_client([[("count_lines", {"path": "a"})]] * 50)
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, max_steps=4,
+                    log=lambda _: None)
+    assert run.stop_reason == "step cap of 4 reached"
+    assert run.writeup is None
+    assert run.tool_calls == 4
 
 
-def test_any_answer_is_done_by_default():
-    """With no tool calls, the first answer ends the run."""
-    answer, reason, usage = run_loop(FakeClient([text_reply("3 files")]), "goal", TOOLS,
-                                     log=quiet)
-    assert (answer, reason, usage.input_tokens) == ("3 files", "done at step 1", 1000)
+def test_parallel_results_go_back_in_one_message(fake_client):
+    """Two tool calls in one turn produce one tool message with two results."""
+    client = fake_client([[("count_lines", {"path": "a"}), ("count_lines", {"path": "b"})],
+                          ANSWER])
+    run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, log=lambda _: None)
+    tool_messages = [m for m in client.histories[1] if m.role == "tool"]
+    assert len(tool_messages) == 1
+    assert [r["id"] for r in tool_messages[0].tool_results] == ["c0", "c1"]
 
 
-def test_cap_stops_a_model_that_never_answers():
-    """A model that only calls tools is stopped at the cap, with no answer."""
-    looping = calls_reply(ToolCall("1", "list_directory", {"path": "."}))
-    answer, reason, _ = run_loop(FakeClient([looping]), "goal", TOOLS, max_steps=3, log=quiet)
-    assert answer is None and reason == "step cap of 3 reached"
+def test_answer_that_breaks_the_contract_is_not_accepted(fake_client):
+    """A final answer missing a required field stops the run without a write-up."""
+    client = fake_client(['{"title": "only a title"}'])
+    run = run_agent(client, "goal", [], Writeup, log=lambda _: None)
+    assert run.writeup is None
+    assert run.stop_reason.startswith("answer did not match the schema")
 
 
-def test_two_calls_get_both_results_in_one_message():
-    """Parallel calls: both results go back together, in ONE tool message."""
-    both = calls_reply(ToolCall("1", "count_lines", {"path": "app/main.py"}),
-                       ToolCall("2", "count_lines", {"path": "app/utils.py"}))
-    client = FakeClient([both, text_reply("7 and 8")])
-    run_loop(client, "goal", TOOLS, log=quiet)
-    last = client.seen[1][-1]
-    assert [m.role for m in client.seen[1]] == ["user", "model", "tool"]
-    assert [r["result"] for r in last.tool_results] == [{"result": 7}, {"result": 8}]
-
-
-def test_bad_arguments_come_back_as_an_error_result():
-    """A wrong type is not run: the model gets the validation error to read instead."""
-    bad = calls_reply(ToolCall("1", "count_lines", {"path": 5}))
-    client = FakeClient([bad, text_reply("sorry")])
-    run_loop(client, "goal", TOOLS, log=quiet)
-    error = client.seen[1][-1].tool_results[0]["result"]["error"]
-    assert "invalid arguments for count_lines" in error and "path" in error
-
-
-def test_unknown_tool_comes_back_as_an_error_result():
-    """A tool name that doesn't exist is reported, not crashed on."""
-    client = FakeClient([calls_reply(ToolCall("1", "delete_file", {})), text_reply("ok")])
-    run_loop(client, "goal", TOOLS, log=quiet)
-    assert "no tool called delete_file" in client.seen[1][-1].tool_results[0]["result"]["error"]
-
-
-def test_honest_check_rejects_an_invented_ticket():
-    """A ticket the source doesn't contain is not 'done'; the loop asks again."""
-    client = FakeClient([text_reply("Fixes JIRA-4821."), text_reply("No ticket is referenced.")])
-    answer, reason, _ = run_loop(client, "goal", TOOLS, honest_ticket_check("diff ..."),
-                                 log=quiet)
-    assert reason == "done at step 2" and "No ticket is referenced" in answer
-    assert client.seen[1][-1].text.startswith("Not done")
-
-
-def test_honest_check_accepts_a_real_ticket():
-    """A ticket that is in the source passes."""
-    check = honest_ticket_check("Implements JIRA-12 in coupons.py")
-    assert check("Implements JIRA-12.") and not check("Implements JIRA-13.")
+def test_trace_records_each_step(fake_client):
+    """Every tool call and the final answer appear in the trace."""
+    client = fake_client([[("count_lines", {"path": "a"})], ANSWER])
+    lines = []
+    run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, log=lines.append)
+    assert any("count_lines" in line for line in lines)
+    assert lines[-1].startswith("step 2 · final answer")

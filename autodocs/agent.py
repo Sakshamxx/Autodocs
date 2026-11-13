@@ -1,91 +1,84 @@
-"""The agent loop, written by hand: think, act, look at the result, repeat. Now with tools."""
+"""The agent loop, written by hand: think, act, look at the result, repeat."""
 
-import argparse
-import os
-import re
-import sys
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
-from autodocs.llm import GeminiClient, Message, ModelClient, Usage, cost_usd
+from pydantic import BaseModel, ValidationError
+
+from autodocs.llm import Message, ModelClient, Usage, cost_usd
 from autodocs.tools import Tool, run_tool
 
-SYSTEM_PROMPT = """You answer questions about files by calling the tools you are given.
-Never guess what a tool could tell you. Ask for several tools at once when they do not
-depend on each other. When you have everything you need, reply with your answer and no
-tool call."""
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+SYSTEM_PROMPT = """You are AutoDocs. You document a finished branch of a Python repository.
+Work in this order: read the diff; open any file you need to understand code the diff uses
+but does not show; fix docstrings that are missing or wrong with write_docstring; then answer.
+Rules:
+- `functions` lists every application function the diff adds OR modifies (any changed line
+  inside it), not only new ones. Skip tests and migrations.
+- Describe only behaviour you read in code. Never guess what an unread helper does.
+- could_not_determine lists, one item each: helpers the diff calls that you did not open,
+  functions with no body (`...` or `pass`), and files that do not parse.
+- Copy names, paths and URLs exactly as they appear in the code.
+- Ask for several tools at once when they do not depend on each other.
+You are done when every changed function is in `functions` and every field is filled."""
 
 
-def answer_given(text: str) -> bool:
-    """Default done check: any non-empty answer counts."""
-    return bool(text.strip())
+@dataclass
+class RunResult:
+    """How a run ended, what it produced and what it cost."""
+
+    writeup: BaseModel | None
+    stop_reason: str
+    steps: int
+    usage: Usage
+    cost_usd: float
+    tool_calls: int = 0
+    trace: list[str] = field(default_factory=list)
 
 
-def honest_ticket_check(source: str) -> Callable[[str], bool]:
-    """Done check with an honest exit: cited tickets must be in the source, or none claimed."""
-
-    def is_done(text: str) -> bool:
-        """True if every cited ticket is in the source, or the answer says there is none."""
-        cited = re.findall(r"\bJIRA-\d+\b", text)
-        if cited:
-            return all(ticket in source for ticket in cited)
-        return "No ticket is referenced" in text
-
-    return is_done
+def short(value, limit: int = 80) -> str:
+    """Shorten a value for the trace."""
+    text = str(value).replace("\n", " ")
+    return text if len(text) <= limit else text[:limit] + "…"
 
 
-def run_loop(client: ModelClient, goal: str, tools: list[Tool],
-             is_done: Callable[[str], bool] = answer_given, max_steps: int = 8,
-             log: Callable[[str], None] = print):
-    """Loop until an answer passes is_done or the step cap; return (answer, reason, usage)."""
-    # Stop condition, written before the code: stop when the model replies with no tool
-    # call and the text passes is_done (done), or after max_steps (cap).
+def run_agent(client: ModelClient, goal: str, tools: list[Tool],
+              output_schema: type[BaseModel], max_steps: int = 12,
+              log: Callable[[str], None] = print) -> RunResult:
+    """Run the loop until the model answers in the output schema or max_steps is reached."""
+    # Stop condition, written before the code: the run ends when the model answers without
+    # asking for a tool and the answer fits output_schema (done), or after max_steps (cap).
     history = [Message(role="user", text=goal)]
     tools_by_name = {tool.name: tool for tool in tools}
-    total = Usage()
+    usage, trace, tool_calls = Usage(), [], 0
+
+    def note(line: str) -> None:
+        """Record a trace line and show it."""
+        trace.append(line)
+        log(line)
+
+    def result(writeup, reason: str, step: int) -> RunResult:
+        """Package the run's outcome."""
+        return RunResult(writeup, reason, step, usage, cost_usd(client.model, usage),
+                         tool_calls, trace)
+
     for step in range(1, max_steps + 1):
-        reply = client.reply(SYSTEM_PROMPT, history, tools)
-        total.add(reply.usage)
+        reply = client.reply(SYSTEM_PROMPT, history, tools, output_schema)
+        usage.add(reply.usage)
         history.append(reply.message)
-        asked = ", ".join(f"{c.name}({c.args})" for c in reply.tool_calls)
-        log(f"step {step:2d} · {reply.usage.input_tokens:>6,} in · "
-            f"${cost_usd(client.model, total):.5f} so far · "
-            f"{asked or reply.text.strip()[:70]}")
-        if reply.tool_calls:
-            # Run every call, then send ALL the results back together, in one message.
-            results = [{"id": c.id, "name": c.name,
-                        "result": run_tool(tools_by_name, c.name, c.args)}
-                       for c in reply.tool_calls]
-            history.append(Message(role="tool", tool_results=results))
-            continue
-        if is_done(reply.text):
-            return reply.text, f"done at step {step}", total
-        history.append(Message(role="user", text="Not done: the answer does not meet the "
-                                                 "goal. Try again."))
-    return None, f"step cap of {max_steps} reached", total
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Ask a question about the practice/ folder: python -m autodocs.agent "question"."""
-    from autodocs.practice_tools import count_lines, list_directory
-
-    parser = argparse.ArgumentParser(prog="autodocs.agent")
-    parser.add_argument("goal")
-    parser.add_argument("--max-steps", type=int, default=8)
-    args = parser.parse_args(argv)
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("GEMINI_API_KEY is not set (copy .env.example to .env)", file=sys.stderr)
-        return 2
-    client = GeminiClient(api_key, os.environ.get("AUTODOCS_MODEL", DEFAULT_MODEL))
-    tools = [Tool.from_function(count_lines), Tool.from_function(list_directory)]
-    answer, reason, total = run_loop(client, args.goal, tools, max_steps=args.max_steps)
-    print(f"\n{reason} · {total.input_tokens:,} in / {total.output_tokens:,} out · "
-          f"${cost_usd(client.model, total):.5f}")
-    if answer:
-        print(answer)
-    return 0 if answer else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        tokens = f"{reply.usage.input_tokens:,} in / {reply.usage.output_tokens:,} out"
+        if not reply.tool_calls:
+            note(f"step {step} · final answer · {tokens}")
+            try:
+                return result(output_schema.model_validate_json(reply.text), "done", step)
+            except ValidationError as exc:
+                return result(None, f"answer did not match the schema: {short(exc, 200)}", step)
+        results = []
+        for call in reply.tool_calls:
+            outcome = run_tool(tools_by_name, call.name, call.args)
+            tool_calls += 1
+            note(f"step {step} · {call.name}({short(call.args, 60)}) → {short(outcome, 70)}")
+            results.append({"id": call.id, "name": call.name, "result": outcome})
+        # All results for this turn go back in ONE message, each with its call's id.
+        history.append(Message(role="tool", tool_results=results))
+        note(f"step {step} · {len(results)} tool call(s) · {tokens}")
+    return result(None, f"step cap of {max_steps} reached", max_steps)

@@ -1,69 +1,50 @@
-"""Tool.from_function and run_tool: what the model is shown, and what reaches the function."""
+"""Tools: typed functions with strict argument checking."""
 
 import pytest
 
-from autodocs.practice_tools import count_lines, list_directory
 from autodocs.tools import Tool, run_tool
 
 
-def test_type_hints_become_the_schema_and_the_docstring_the_description():
-    """The schema the model reads comes from the signature; nothing is typed twice."""
-    tool = Tool.from_function(count_lines)
+def read_lines(path: str, start: int = 1) -> str:
+    """Read lines from a file."""
+    return f"{path}:{start}"
+
+
+def test_type_hints_become_the_schema():
+    """Required and optional arguments come from the signature; the docstring is the description."""
+    tool = Tool.from_function(read_lines)
     schema = tool.args_model.model_json_schema()
-    assert schema["properties"]["path"]["type"] == "string"
     assert schema["required"] == ["path"]
-    assert tool.description.startswith("Return the number of lines")
+    assert schema["properties"]["start"]["type"] == "integer"
+    assert tool.description == "Read lines from a file."
 
 
-def test_a_default_makes_an_argument_optional():
-    """list_directory(path='.') is optional in the schema."""
-    schema = Tool.from_function(list_directory).args_model.model_json_schema()
-    assert "required" not in schema
+def test_functions_need_hints_and_docstrings():
+    """A tool without a docstring or a type hint is refused at definition time."""
+    def no_doc(path: str) -> str:
+        """Removed below, to test a tool with no description."""
+        return path
+    no_doc.__doc__ = None
+
+    def no_hint(path):
+        """Has a docstring."""
+        return path
+    with pytest.raises(TypeError, match="docstring"):
+        Tool.from_function(no_doc)
+    with pytest.raises(TypeError, match="type hint"):
+        Tool.from_function(no_hint)
 
 
-def test_strict_mode_refuses_a_number_for_a_string():
-    """Strict: 5 is not silently turned into '5'."""
-    tools = {"count_lines": Tool.from_function(count_lines)}
-    assert "error" in run_tool(tools, "count_lines", {"path": 5})
+@pytest.mark.parametrize("args", [{"path": 5}, {"path": "a", "start": "2"},
+                                  {"path": "a", "extra": 1}, {}])
+def test_bad_arguments_become_error_results(args):
+    """Wrong types, extra fields and missing fields return an error instead of running."""
+    tools = {"read_lines": Tool.from_function(read_lines)}
+    assert "error" in run_tool(tools, "read_lines", args)
 
 
-def test_extra_fields_are_refused():
-    """An argument the function doesn't take is an error, not ignored."""
-    tools = {"count_lines": Tool.from_function(count_lines)}
-    assert "error" in run_tool(tools, "count_lines", {"path": "app/main.py", "lines": 3})
-
-
-def test_a_missing_type_hint_is_caught_when_the_tool_is_built():
-    """No type hint, no schema: refuse at build time, not at run time."""
-
-    def broken(path):
-        """Count lines."""
-        return 0
-
-    with pytest.raises(TypeError, match="needs a type hint"):
-        Tool.from_function(broken)
-
-
-def test_a_missing_docstring_is_caught_when_the_tool_is_built():
-    """No docstring means the model has no description to read."""
-
-    def silent(path: str) -> int:
-        return 0
-
-    with pytest.raises(TypeError, match="needs a docstring"):
-        Tool.from_function(silent)
-
-
-def test_the_practice_tools_stay_inside_practice():
-    """A path that escapes practice/ gets nothing back."""
-    assert count_lines("../pyproject.toml") == -1
-    assert list_directory("..") == []
-    assert count_lines("app/main.py") == 7
-
-
-def test_show_line_counts_from_one():
-    """The code matches the description: line 1 is the first line."""
-    from autodocs.practice_tools import show_line
-
-    assert show_line("app/utils.py", 1) == "def add(a, b):"
-    assert show_line("app/utils.py", 0) == ""
+def test_valid_call_and_unknown_tool():
+    """A valid call runs; an unknown tool name is an error result."""
+    tools = {"read_lines": Tool.from_function(read_lines)}
+    assert run_tool(tools, "read_lines", {"path": "a", "start": 3}) == {"result": "a:3"}
+    assert "no tool called" in run_tool(tools, "delete_repo", {})["error"]
