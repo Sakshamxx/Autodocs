@@ -1,23 +1,24 @@
-"""The agent loop, written by hand: think, act, look at the result, repeat. No tools yet."""
+"""The agent loop, written by hand: think, act, look at the result, repeat. Now with tools."""
 
 import argparse
 import os
 import re
 import sys
 from collections.abc import Callable
-from pathlib import Path
 
-from autodocs.llm import GeminiClient, ModelClient, Usage, cost_usd
+from autodocs.llm import GeminiClient, Message, ModelClient, Usage, cost_usd
+from autodocs.tools import Tool, run_tool
 
-SYSTEM_PROMPT = """You help document a code branch. Each turn, reply with exactly one line
-starting with ASK: (a question you need answered) or ANSWER: (your final answer)."""
-NO_MORE_INFO = "No more information is available. Answer with what you have."
+SYSTEM_PROMPT = """You answer questions about files by calling the tools you are given.
+Never guess what a tool could tell you. Ask for several tools at once when they do not
+depend on each other. When you have everything you need, reply with your answer and no
+tool call."""
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 
 def answer_given(text: str) -> bool:
-    """Default done check: any ANSWER counts."""
-    return True
+    """Default done check: any non-empty answer counts."""
+    return bool(text.strip())
 
 
 def honest_ticket_check(source: str) -> Callable[[str], bool]:
@@ -33,46 +34,52 @@ def honest_ticket_check(source: str) -> Callable[[str], bool]:
     return is_done
 
 
-def run_loop(client: ModelClient, goal: str, is_done: Callable[[str], bool] = answer_given,
-             max_steps: int = 8, log: Callable[[str], None] = print):
-    """Loop until an ANSWER passes is_done or the step cap; return (answer, reason, usage)."""
-    # Stop condition, written before the code: stop when an ANSWER passes is_done (done),
-    # or after max_steps (cap). Nothing else ends the run.
-    messages = [{"role": "user", "text": goal}]
+def run_loop(client: ModelClient, goal: str, tools: list[Tool],
+             is_done: Callable[[str], bool] = answer_given, max_steps: int = 8,
+             log: Callable[[str], None] = print):
+    """Loop until an answer passes is_done or the step cap; return (answer, reason, usage)."""
+    # Stop condition, written before the code: stop when the model replies with no tool
+    # call and the text passes is_done (done), or after max_steps (cap).
+    history = [Message(role="user", text=goal)]
+    tools_by_name = {tool.name: tool for tool in tools}
     total = Usage()
     for step in range(1, max_steps + 1):
-        reply = client.reply(SYSTEM_PROMPT, messages)
+        reply = client.reply(SYSTEM_PROMPT, history, tools)
         total.add(reply.usage)
-        messages.append({"role": "model", "text": reply.text})
-        first_line = reply.text.strip().splitlines()[0] if reply.text.strip() else ""
+        history.append(reply.message)
+        asked = ", ".join(f"{c.name}({c.args})" for c in reply.tool_calls)
         log(f"step {step:2d} · {reply.usage.input_tokens:>6,} in · "
-            f"${cost_usd(client.model, total):.5f} so far · {first_line[:70]}")
-        if first_line.startswith("ANSWER:") and is_done(reply.text):
+            f"${cost_usd(client.model, total):.5f} so far · "
+            f"{asked or reply.text.strip()[:70]}")
+        if reply.tool_calls:
+            # Run every call, then send ALL the results back together, in one message.
+            results = [{"id": c.id, "name": c.name,
+                        "result": run_tool(tools_by_name, c.name, c.args)}
+                       for c in reply.tool_calls]
+            history.append(Message(role="tool", tool_results=results))
+            continue
+        if is_done(reply.text):
             return reply.text, f"done at step {step}", total
-        if first_line.startswith("ANSWER:"):
-            observation = "Not done: the answer does not meet the goal. Try again."
-        else:
-            observation = NO_MORE_INFO
-        messages.append({"role": "user", "text": observation})
+        history.append(Message(role="user", text="Not done: the answer does not meet the "
+                                                 "goal. Try again."))
     return None, f"step cap of {max_steps} reached", total
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run one goal from the command line: python -m autodocs.agent "goal" [--attach file]."""
+    """Ask a question about the practice/ folder: python -m autodocs.agent "question"."""
+    from autodocs.practice_tools import count_lines, list_directory
+
     parser = argparse.ArgumentParser(prog="autodocs.agent")
     parser.add_argument("goal")
-    parser.add_argument("--attach", help="a file to append to the goal, e.g. a diff")
     parser.add_argument("--max-steps", type=int, default=8)
     args = parser.parse_args(argv)
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         print("GEMINI_API_KEY is not set (copy .env.example to .env)", file=sys.stderr)
         return 2
-    goal = args.goal + (f"\n\n{Path(args.attach).read_text()}" if args.attach else "")
     client = GeminiClient(api_key, os.environ.get("AUTODOCS_MODEL", DEFAULT_MODEL))
-    print(f"counting call: {client.count_tokens([{'role': 'user', 'text': goal}]):,} tokens "
-          "(messages only; the system prompt is not counted)")
-    answer, reason, total = run_loop(client, goal, max_steps=args.max_steps)
+    tools = [Tool.from_function(count_lines), Tool.from_function(list_directory)]
+    answer, reason, total = run_loop(client, args.goal, tools, max_steps=args.max_steps)
     print(f"\n{reason} · {total.input_tokens:,} in / {total.output_tokens:,} out · "
           f"${cost_usd(client.model, total):.5f}")
     if answer:
