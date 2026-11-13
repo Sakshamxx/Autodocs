@@ -2,15 +2,15 @@
   "branch": "feat/coupon-stacking",
   "base": "main",
   "model": "gemini-3.5-flash-lite",
-  "finished_at": "2026-11-13T21:02:24+00:00",
+  "finished_at": "2026-11-13T21:05:43+00:00",
   "stop_reason": "done",
-  "steps": 3,
-  "tool_calls": 3,
+  "steps": 2,
+  "tool_calls": 1,
   "usage": {
-    "input_tokens": 9326,
-    "output_tokens": 601
+    "input_tokens": 3591,
+    "output_tokens": 524
   },
-  "cost_usd": 0.0043,
+  "cost_usd": 0.002387,
   "changed": {
     "functions": [
       "shoplite/services/coupons.py::kind_already_applied",
@@ -22,49 +22,51 @@
   },
   "writeup": {
     "title": "feat(coupons): allow stacking one percent and one flat coupon",
-    "summary": "This branch updates the cart and pricing services to allow up to two coupons per order (specifically one percent coupon and one flat coupon). Percent coupons are applied first to the full subtotal, and flat coupons are then applied to the remaining amount.",
+    "summary": "This branch updates the coupon system to allow up to two coupons per order, provided they are of different kinds (one percent and one flat). Percent coupons are applied to the full subtotal first, and flat coupons are then applied to the remaining amount. New helper functions validate coupon kinds and compute stacked discounts.",
     "changes": [
-      "Increased maximum coupons per order from 1 to 2, ensuring at most one percent and one flat coupon can be applied.",
-      "Added a helper function to check if a coupon kind is already applied to the cart.",
-      "Added discount stacking logic in pricing service to compute percent discounts on the subtotal first and flat discounts on the remaining balance.",
-      "Updated cart summary and tests to verify stacking behavior and validations."
+      "Increased MAX_COUPONS_PER_ORDER from 1 to 2 with kind-based restrictions",
+      "Added kind_already_applied helper to prevent duplicate coupon kinds in a cart",
+      "Added stack_discounts to apply percent coupons before flat coupons sequentially",
+      "Updated quote_cart to use stacked discounts",
+      "Added and updated test cases for coupon stacking and validation"
     ],
     "functions": [
       {
         "path": "shoplite/services/coupons.py",
         "function": "kind_already_applied",
-        "what_it_does": "Returns True if the cart already contains an applied coupon of the specified kind.",
+        "body": "implemented",
+        "what_it_does": "True if the cart already has a coupon of this kind.",
         "docstring_updated": false
       },
       {
         "path": "shoplite/services/coupons.py",
         "function": "apply_coupon",
-        "what_it_does": "Attaches a coupon to the user's cart after validating uniqueness, coupon limits, kinds, and redeemability.",
+        "body": "implemented",
+        "what_it_does": "Attach a coupon to the user's cart after checking it.",
         "docstring_updated": false
       },
       {
         "path": "shoplite/services/pricing.py",
         "function": "quote_cart",
-        "what_it_does": "Computes the subtotal, stacked discounts, shipping, and total for a cart and returns a PriceQuote.",
+        "body": "implemented",
+        "what_it_does": "Work out what this cart costs right now.",
         "docstring_updated": false
       },
       {
         "path": "shoplite/services/pricing.py",
         "function": "stack_discounts",
-        "what_it_does": "Applies percent coupons first to the subtotal, then flat coupons to the remaining balance, returning a list of coupon-discount tuples.",
+        "body": "implemented",
+        "what_it_does": "Apply percent coupons first, then flat ones to what is left.",
         "docstring_updated": false
       }
     ],
-    "release_note": "Orders can now use up to two coupons (one percent and one flat), with percent coupons applied first.",
+    "release_note": "Orders can use two coupons: one percent and one flat. Percent coupons apply first.",
     "could_not_determine": []
   },
   "docstring_patch": "",
   "trace": [
     "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..2\u2026",
     "step 1 \u00b7 1 tool call(s) \u00b7 566 in / 10 out",
-    "step 2 \u00b7 open_file({'start_line': 1, 'path': 'shoplite/services/coupons.py', 'e\u2026) \u2192 {'result': 'shoplite/services/coupons.py lines 1-100 of 107\\n    1  \"\"\u2026",
-    "step 2 \u00b7 open_file({'start_line': 1, 'path': 'shoplite/services/pricing.py', 'e\u2026) \u2192 {'result': 'shoplite/services/pricing.py lines 1-61 of 61\\n    1  \"\"\"P\u2026",
-    "step 2 \u00b7 2 tool call(s) \u00b7 3,025 in / 75 out",
-    "step 3 \u00b7 final answer \u00b7 5,735 in / 516 out"
+    "step 2 \u00b7 final answer \u00b7 3,025 in / 514 out"
   ]
 }

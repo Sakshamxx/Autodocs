@@ -1,0 +1,98 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "finished_at": "2026-11-13T21:06:08+00:00",
+  "stop_reason": "done",
+  "steps": 3,
+  "tool_calls": 2,
+  "usage": {
+    "input_tokens": 11285,
+    "output_tokens": 800
+  },
+  "cost_usd": 0.005385,
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "writeup": {
+    "title": "feat(reviews): add review moderation and flagging system",
+    "summary": "This branch introduces a moderation system for customer reviews, allowing users to flag reviews with valid reasons. When a review receives three flags, its status updates to hidden, removing it from public product pages and ratings while allowing administrators to review hidden entries via a dedicated endpoint.",
+    "changes": [
+      "Added a review_flags table and a review status column via database migration 0004.",
+      "Added POST /reviews/<id>/flag endpoint allowing authenticated customers to flag reviews with specific reasons.",
+      "Added GET /reviews/hidden endpoint for administrators to list reviews hidden by flags.",
+      "Updated review queries and rating summary computations to exclude hidden reviews.",
+      "Added comprehensive unit tests covering flagging rules, hidden review limits, and role access."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Flags a specific review with a provided reason after validating its existence.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "list_hidden_reviews",
+        "body": "implemented",
+        "what_it_does": "Returns a paginated list of hidden reviews for authenticated administrators.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query for published reviews of a product ordered by newest first.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "rating_summary",
+        "body": "implemented",
+        "what_it_does": "Calculates the total count and rounded average rating for published reviews of a product.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Records a user flag on a review and hides the review if the flag threshold is reached.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "hidden_review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query for hidden reviews ordered by ID in ascending order.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "score_review_text",
+        "body": "empty",
+        "what_it_does": "Placeholder function for scoring review text that is not yet implemented.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Customers can flag reviews (POST /reviews/<id>/flag). Three flags hide a review; admins list hidden reviews at GET /reviews/hidden.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 566 in / 10 out",
+    "step 2 \u00b7 open_file({'end_line': 100, 'path': 'shoplite/services/reviews.py', 's\u2026) \u2192 {'result': 'shoplite/services/reviews.py lines 50-79 of 79\\n   50     \u2026",
+    "step 2 \u00b7 1 tool call(s) \u00b7 5,080 in / 38 out",
+    "step 3 \u00b7 final answer \u00b7 5,639 in / 752 out"
+  ]
+}
