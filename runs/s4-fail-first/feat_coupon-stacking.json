@@ -1,0 +1,81 @@
+{
+  "branch": "feat/coupon-stacking",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "finished_at": "2026-11-13T21:29:35+00:00",
+  "stop_reason": "done",
+  "steps": 3,
+  "tool_calls": 2,
+  "tool_errors": 1,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 4504,
+    "output_tokens": 606
+  },
+  "cost_usd": 0.002866,
+  "changed": {
+    "functions": [
+      "shoplite/services/coupons.py::kind_already_applied",
+      "shoplite/services/coupons.py::apply_coupon",
+      "shoplite/services/pricing.py::quote_cart",
+      "shoplite/services/pricing.py::stack_discounts"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(coupons): allow stacking one percent and one flat coupon",
+    "summary": "Updates coupon validation and pricing logic so a cart can hold up to two coupons as long as one is percentage-based and the other is flat. Percent coupons are applied to the full subtotal first, and flat coupons are applied to the remaining amount. Duplicate coupon kinds in the same cart are rejected.",
+    "changes": [
+      "Increased MAX_COUPONS_PER_ORDER from 1 to 2 with a rule allowing at most one percent and one flat coupon.",
+      "Added kind_already_applied helper to check if a cart already contains a coupon of a specific kind.",
+      "Added stack_discounts function in pricing to apply percent coupons first, then flat coupons to the remaining subtotal.",
+      "Updated quote_cart to use stack_discounts for calculating cart coupon deductions.",
+      "Added tests for coupon stacking, discount bounds, and redemption logging."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "kind_already_applied",
+        "body": "implemented",
+        "what_it_does": "Returns true if the cart already has an applied coupon matching the given kind.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "apply_coupon",
+        "body": "implemented",
+        "what_it_does": "Attaches a coupon to the user's cart after ensuring it is not already applied, the coupon limit/kind constraints are respected, and it is redeemable.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "quote_cart",
+        "body": "implemented",
+        "what_it_does": "Computes the subtotal, stacked discounts, shipping rate, and final total for the cart.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "stack_discounts",
+        "body": "implemented",
+        "what_it_does": "Applies percent coupons first to the full subtotal and then flat coupons to the remaining balance.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Orders can now use up to two coupons (one percent and one flat), with percent coupons applied first.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'error': 'read_diff failed: injected failure (test switch)'}",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..2\u2026",
+    "step 2 \u00b7 1 tool call(s) \u00b7 693 in / 10 out",
+    "step 3 \u00b7 final answer \u00b7 3,154 in / 586 out"
+  ]
+}

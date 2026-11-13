@@ -31,3 +31,29 @@ The planted failure (`score_review_text`'s docstring deleted, branch `feat/revie
 
 Without the field, the only signal was a word in a sentence; with it, code can check `body == "empty"`.
 
+## S4: surviving failures (gemini-3.5-flash-lite, 2026-11-14)
+
+**The broken branch** (`chore/reports-refactor`: `shoplite/services/reports/stock.py` does not parse):
+
+| Version | `low_stock` (in the broken file) | Could not determine | Corrected by code | Cost (USD) |
+|---|---|---|---|---|
+| v1 (`s03-b`), 2 runs | `implemented`, described as working code | Nothing | — | 0.00288 each |
+| `s04-a`, 2 runs | `file does not parse` | The file, plus the reason added by code | 1 each | 0.00274, 0.00413 |
+
+**Retrying a 400** (a tool name with a space, rejected as `400 INVALID_ARGUMENT`):
+
+| How | Result | Time |
+|---|---|---|
+| One call, no retry | 400 | 0.15–0.5 s |
+| The SDK told to retry 400, 4 attempts | The same 400, after 3 retries (back-off 1.1, 2.7, 4.2 s) | 9.5 s |
+
+Nothing improved, and nothing was billed. 16 rejected requests in a minute did not use the free tier's 15-a-minute quota: the 17th, a good request, succeeded.
+
+**Scenarios** (`runs/s4-*`, from `python -m autodocs.report`):
+
+| Scenario | Stop | Steps | Tool calls (errors) | Cost (USD) | Covered | What happened |
+|---|---|---|---|---|---|---|
+| `AUTODOCS_FAIL_TOOL_CALLS=1` | done | 3 | 2 (1) | 0.00287 | 4/4 | Called `read_diff` again and recovered |
+| `AUTODOCS_FAIL_TOOL_CALLS=every` | done | 3 | 2 (2) | 0.00101 | 0/4 | After the nudge (2 failed rounds) it answered and recorded the failure, but still wrote a summary from the branch name alone; coverage shows 0/4 |
+| `--budget-tokens 5000` | token budget of 5,000 spent | 2 | 3 (0) | 0.00196 | 0/7 | The hard stop fired; the advisory line didn't make it finish early |
+

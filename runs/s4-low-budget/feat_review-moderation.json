@@ -1,0 +1,42 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "finished_at": "2026-11-13T21:30:13+00:00",
+  "stop_reason": "token budget of 5,000 spent",
+  "steps": 2,
+  "tool_calls": 3,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 5000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 5828,
+    "output_tokens": 84
+  },
+  "cost_usd": 0.001958,
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": null,
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 656 in / 10 out",
+    "step 2 \u00b7 open_file({'path': 'shoplite/api/reviews.py', 'end_line': 100, 'start_\u2026) \u2192 {'result': 'shoplite/api/reviews.py lines 1-58 of 58\\n    1  \"\"\"Produc\u2026",
+    "step 2 \u00b7 open_file({'start_line': 1, 'end_line': 100, 'path': 'shoplite/service\u2026) \u2192 {'result': 'shoplite/services/reviews.py lines 1-79 of 79\\n    1  \"\"\"P\u2026",
+    "step 2 \u00b7 2 tool call(s) \u00b7 5,172 in / 74 out"
+  ]
+}
