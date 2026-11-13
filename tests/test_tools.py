@@ -1,5 +1,7 @@
 """Tool.from_function and run_tool: what the model is shown, and what reaches the function."""
 
+import pytest
+
 from autodocs.practice_tools import count_lines, list_directory
 from autodocs.tools import Tool, run_tool
 
@@ -31,8 +33,37 @@ def test_extra_fields_are_refused():
     assert "error" in run_tool(tools, "count_lines", {"path": "app/main.py", "lines": 3})
 
 
+def test_a_missing_type_hint_is_caught_when_the_tool_is_built():
+    """No type hint, no schema: refuse at build time, not at run time."""
+
+    def broken(path):
+        """Count lines."""
+        return 0
+
+    with pytest.raises(TypeError, match="needs a type hint"):
+        Tool.from_function(broken)
+
+
+def test_a_missing_docstring_is_caught_when_the_tool_is_built():
+    """No docstring means the model has no description to read."""
+
+    def silent(path: str) -> int:
+        return 0
+
+    with pytest.raises(TypeError, match="needs a docstring"):
+        Tool.from_function(silent)
+
+
 def test_the_practice_tools_stay_inside_practice():
     """A path that escapes practice/ gets nothing back."""
     assert count_lines("../pyproject.toml") == -1
     assert list_directory("..") == []
     assert count_lines("app/main.py") == 7
+
+
+def test_show_line_counts_from_one():
+    """The code matches the description: line 1 is the first line."""
+    from autodocs.practice_tools import show_line
+
+    assert show_line("app/utils.py", 1) == "def add(a, b):"
+    assert show_line("app/utils.py", 0) == ""

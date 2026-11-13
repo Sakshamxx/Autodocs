@@ -25,3 +25,12 @@ def list_directory(path: str = ".") -> list[str]:
     if full is None or not full.is_dir():
         return []
     return sorted(p.name + ("/" if p.is_dir() else "") for p in full.iterdir())
+
+
+def show_line(path: str, line_number: int) -> str:
+    """Return one line of a file under practice/. line_number starts at 1 (the first line)."""
+    full = safe_path(path)
+    if full is None or not full.is_file():
+        return ""
+    lines = full.read_text().splitlines()
+    return lines[line_number - 1] if 1 <= line_number <= len(lines) else ""
