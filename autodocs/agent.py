@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -17,6 +18,19 @@ DEFAULT_MODEL = "gemini-3.5-flash-lite"
 def answer_given(text: str) -> bool:
     """Default done check: any ANSWER counts."""
     return True
+
+
+def honest_ticket_check(source: str) -> Callable[[str], bool]:
+    """Done check with an honest exit: cited tickets must be in the source, or none claimed."""
+
+    def is_done(text: str) -> bool:
+        """True if every cited ticket is in the source, or the answer says there is none."""
+        cited = re.findall(r"\bJIRA-\d+\b", text)
+        if cited:
+            return all(ticket in source for ticket in cited)
+        return "No ticket is referenced" in text
+
+    return is_done
 
 
 def run_loop(client: ModelClient, goal: str, is_done: Callable[[str], bool] = answer_given,
