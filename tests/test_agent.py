@@ -70,3 +70,31 @@ def test_a_function_without_a_body_status_breaks_the_contract(fake_client):
     answer = json.dumps({**json.loads(ANSWER), "functions": [note]})
     run = run_agent(fake_client([answer]), "goal", [], Writeup, log=lambda _: None)
     assert run.writeup is None and run.stop_reason.startswith("answer did not match")
+
+
+def broken_tool(path: str) -> str:
+    """Always raises."""
+    raise OSError("disk on fire")
+
+
+def test_tool_exception_becomes_error_result(fake_client):
+    """A tool that raises returns an error the model sees; the run carries on."""
+    client = fake_client([[("broken_tool", {"path": "a"})], ANSWER])
+    run = run_agent(client, "goal", [Tool.from_function(broken_tool)], Writeup,
+                    log=lambda _: None)
+    sent = client.histories[1][-1].tool_results[0]["result"]
+    assert sent == {"error": "broken_tool failed: OSError: disk on fire"}
+    assert run.stop_reason == "done" and run.tool_errors == 1
+
+
+def test_tool_error_is_sent_without_a_traceback(fake_client):
+    """An expected ToolError reaches the model as its plain message."""
+    from autodocs.tools import ToolError
+
+    def missing(path: str) -> str:
+        """Pretend the file is missing."""
+        raise ToolError(f"{path} is not a file in this repository")
+    client = fake_client([[("missing", {"path": "x.py"})], ANSWER])
+    run_agent(client, "goal", [Tool.from_function(missing)], Writeup, log=lambda _: None)
+    sent = client.histories[1][-1].tool_results[0]["result"]
+    assert sent == {"error": "x.py is not a file in this repository"}

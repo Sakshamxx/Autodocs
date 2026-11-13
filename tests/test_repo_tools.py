@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from autodocs.repo_tools import Workspace, make_repo_tools
+from autodocs.tools import ToolError
 
 
 @pytest.fixture
@@ -15,18 +16,28 @@ def tools(sample_repo, tmp_path):
 
 
 def test_read_diff_shows_the_branch_change(tools):
-    """The diff contains the changed line and the new file."""
+    """The diff contains the changed line, the new file, and a note that it doesn't parse."""
     _, t = tools
     diff = t["read_diff"]()
     assert "- discount" in diff and "app/broken.py" in diff
+    assert "[NOTE: these changed files do not parse: app/broken.py (line 1:" in diff
+
+
+def test_open_file_flags_a_file_that_does_not_parse(tools):
+    """Opening a broken file says so in the header."""
+    _, t = tools
+    assert "[NOTE: this file does not parse: line 1:" in t["open_file"]("app/broken.py")
+    assert "NOTE" not in t["open_file"]("app/shop.py")
 
 
 def test_open_file_numbers_lines_and_refuses_escapes(tools):
     """Lines are numbered; paths outside the repo are refused."""
     _, t = tools
     assert "    1  def total(prices, discount=0):" in t["open_file"]("app/shop.py", 1, 1)
-    assert t["open_file"]("../../etc/passwd").startswith("error")
-    assert t["open_file"]("app/nope.py").startswith("error")
+    with pytest.raises(ToolError, match="not a file in this repository"):
+        t["open_file"]("../../etc/passwd")
+    with pytest.raises(ToolError):
+        t["open_file"]("app/nope.py")
 
 
 def test_write_docstring_replaces_and_inserts(tools):
@@ -50,11 +61,13 @@ def test_same_docstring_is_a_no_op(tools):
 def test_write_docstring_refusals(tools):
     """Unknown functions, unchanged files and unparseable files are not edited."""
     workspace, t = tools
-    assert t["write_docstring"]("app/shop.py", "missing", "x").startswith("error")
-    assert t["write_docstring"]("app/broken.py", "oops", "x").startswith("error: app/broken.py "
-                                                                       "does not parse")
+    with pytest.raises(ToolError, match="no function missing"):
+        t["write_docstring"]("app/shop.py", "missing", "x")
+    with pytest.raises(ToolError, match="app/broken.py does not parse"):
+        t["write_docstring"]("app/broken.py", "oops", "x")
     (workspace.root / "README.md").write_text("x")
-    assert "not changed" in t["write_docstring"]("README.md", "x", "x")
+    with pytest.raises(ToolError, match="not changed"):
+        t["write_docstring"]("README.md", "x", "x")
 
 
 def test_changed_functions_ignore_docstring_only_edits(tools):

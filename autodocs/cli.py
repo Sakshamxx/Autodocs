@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         "branch": args.branch, "base": args.base, "model": model,
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "stop_reason": run.stop_reason, "steps": run.steps, "tool_calls": run.tool_calls,
+        "tool_errors": run.tool_errors,
         "usage": vars(run.usage), "cost_usd": round(run.cost_usd, 6),
         "changed": workspace.changed_functions(),
         "writeup": run.writeup.model_dump() if run.writeup else None,
@@ -102,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     (out / f"{safe_name}.json").write_text(json.dumps(record, indent=2) + "\n")
     if run.writeup:
         (out / f"{safe_name}.md").write_text(to_markdown(args.branch, run.writeup))
-    print(f"Stop: {run.stop_reason} · {run.steps} steps · {run.tool_calls} tool calls · "
-          f"{run.usage.input_tokens:,} in / {run.usage.output_tokens:,} out tokens · "
-          f"${run.cost_usd:.5f}")
+    print(f"Stop: {run.stop_reason} · {run.steps} steps · {run.tool_calls} tool calls "
+          f"({run.tool_errors} errors) · {run.usage.input_tokens:,} in / "
+          f"{run.usage.output_tokens:,} out tokens · ${run.cost_usd:.5f}")
     return 0 if run.writeup else 1

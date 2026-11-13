@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 
 
+class ToolError(Exception):
+    """An expected tool failure (missing file, unparseable code); sent to the model as an error."""
+
+
 class StrictArgs(BaseModel):
     """Base for tool arguments: no extra fields, no silent type coercion."""
 
@@ -48,4 +52,10 @@ def run_tool(tools: dict[str, Tool], name: str, args: dict) -> dict:
     except ValidationError as exc:
         problems = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]
         return {"error": f"invalid arguments for {name}: {'; '.join(problems)}"}
-    return {"result": tool.function(**valid.model_dump())}
+    try:
+        return {"result": tool.function(**valid.model_dump())}
+    except ToolError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # errors are data: the model reads this and decides what to do
+        return {"error": f"{name} failed: {type(exc).__name__}: {exc}"}
+

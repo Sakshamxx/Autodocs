@@ -16,9 +16,11 @@ Rules:
   inside it), not only new ones. Skip tests and migrations.
 - Describe only behaviour you read in code. Never guess what an unread helper does.
 - could_not_determine lists, one item each: helpers the diff calls that you did not open,
-  functions with no body (`...` or `pass`), and files that do not parse.
+  functions with no body (`...` or `pass`), files that do not parse, and tools that failed.
 - Copy names, paths and URLs exactly as they appear in the code.
 - Ask for several tools at once when they do not depend on each other.
+- A tool result marked "error" is information. Try another way once; if it fails again,
+  record it in could_not_determine and carry on. Do not repeat a failing call.
 You are done when every changed function is in `functions` and every field is filled."""
 
 
@@ -32,6 +34,7 @@ class RunResult:
     usage: Usage
     cost_usd: float
     tool_calls: int = 0
+    tool_errors: int = 0
     trace: list[str] = field(default_factory=list)
 
 
@@ -49,7 +52,7 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
     # asking for a tool and the answer fits output_schema (done), or after max_steps (cap).
     history = [Message(role="user", text=goal)]
     tools_by_name = {tool.name: tool for tool in tools}
-    usage, trace, tool_calls = Usage(), [], 0
+    usage, trace, counts = Usage(), [], {"calls": 0, "errors": 0}
 
     def note(line: str) -> None:
         """Record a trace line and show it."""
@@ -59,7 +62,7 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
     def result(writeup, reason: str, step: int) -> RunResult:
         """Package the run's outcome."""
         return RunResult(writeup, reason, step, usage, cost_usd(client.model, usage),
-                         tool_calls, trace)
+                         counts["calls"], counts["errors"], trace)
 
     for step in range(1, max_steps + 1):
         reply = client.reply(SYSTEM_PROMPT, history, tools, output_schema)
@@ -75,7 +78,8 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
         results = []
         for call in reply.tool_calls:
             outcome = run_tool(tools_by_name, call.name, call.args)
-            tool_calls += 1
+            counts["calls"] += 1
+            counts["errors"] += "error" in outcome
             note(f"step {step} · {call.name}({short(call.args, 60)}) → {short(outcome, 70)}")
             results.append({"id": call.id, "name": call.name, "result": outcome})
         # All results for this turn go back in ONE message, each with its call's id.
