@@ -1,5 +1,7 @@
 """The output contract: the fields AutoDocs must return, checked by pydantic."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -8,6 +10,9 @@ class FunctionNote(BaseModel):
 
     path: str = Field(description="File path from the repo root.")
     function: str = Field(description="Function name, or Class.method.")
+    body: Literal["implemented", "empty", "not read"] = Field(
+        description="'empty' if the body is only ..., pass or a TODO; 'not read' if you did not "
+                    "open it. Describe behaviour only when 'implemented'.")
     what_it_does: str = Field(description="One sentence, only from code you read.")
     docstring_updated: bool = Field(description="True if you called write_docstring for it.")
 

@@ -62,3 +62,11 @@ def test_trace_records_each_step(fake_client):
     run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, log=lines.append)
     assert any("count_lines" in line for line in lines)
     assert lines[-1].startswith("step 2 · final answer")
+
+
+def test_a_function_without_a_body_status_breaks_the_contract(fake_client):
+    """The body field is required: an answer that leaves it out is not a write-up."""
+    note = {"path": "a.py", "function": "f", "what_it_does": "x", "docstring_updated": False}
+    answer = json.dumps({**json.loads(ANSWER), "functions": [note]})
+    run = run_agent(fake_client([answer]), "goal", [], Writeup, log=lambda _: None)
+    assert run.writeup is None and run.stop_reason.startswith("answer did not match")

@@ -35,7 +35,8 @@ def to_markdown(branch: str, writeup: Writeup) -> str:
     lines = [f"# {writeup.title}", "", writeup.summary, "", "## Changes"]
     lines += [f"- {change}" for change in writeup.changes]
     lines += ["", "## Functions"]
-    lines += [f"- `{f.path}::{f.function}`: {f.what_it_does}" for f in writeup.functions]
+    lines += [f"- `{f.path}::{f.function}` ({f.body}): {f.what_it_does}"
+              for f in writeup.functions]
     lines += ["", "## Could not determine"]
     lines += [f"- {item}" for item in writeup.could_not_determine] or ["- Nothing."]
     lines += ["", "## Release note", writeup.release_note or "No user-visible change."]
