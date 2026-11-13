@@ -1,12 +1,13 @@
 """The agent loop, written by hand: think, act, look at the result, repeat."""
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ValidationError
 
-from autodocs.llm import Message, ModelClient, Usage, cost_usd
-from autodocs.tools import Tool, run_tool
+from autodocs.llm import Message, ModelClient, ModelError, Usage, cost_usd
+from autodocs.tools import FailureInjector, Tool, run_tool
 
 SYSTEM_PROMPT = """You are AutoDocs. You document a finished branch of a Python repository.
 Work in this order: read the diff; open any file you need to understand code the diff uses
@@ -21,7 +22,21 @@ Rules:
 - Ask for several tools at once when they do not depend on each other.
 - A tool result marked "error" is information. Try another way once; if it fails again,
   record it in could_not_determine and carry on. Do not repeat a failing call.
+- Watch the budget line below. When it is nearly spent, answer with what you have.
 You are done when every changed function is in `functions` and every field is filled."""
+
+
+FAILED_ROUNDS_BEFORE_NUDGE = 2  # then the engine tells the model to answer now
+FAILED_ROUNDS_BEFORE_STOP = 4   # then the engine gives up for it
+
+
+@dataclass
+class Limits:
+    """The run's ceilings."""
+
+    max_steps: int = 12  # hard: the loop stops here
+    budget_tokens: int = 60_000  # advisory each turn, and a hard stop once spent
+    max_seconds: float = 300  # wall clock for the whole run
 
 
 @dataclass
@@ -44,15 +59,33 @@ def short(value, limit: int = 80) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def budget_line(usage: Usage, limits: Limits, step: int, failed_rounds: int = 0) -> str:
+    """The note the engine writes into every turn: budget, and a nudge if tools keep failing."""
+    used = usage.input_tokens + usage.output_tokens  # thinking is counted in output
+    line = (f"\n\nBudget: {used:,} of {limits.budget_tokens:,} tokens used; "
+            f"step {step} of {limits.max_steps}.")
+    if failed_rounds >= FAILED_ROUNDS_BEFORE_NUDGE:
+        line += (f" Every tool call in the last {failed_rounds} rounds failed: stop calling "
+                 "tools and answer now, listing what you could not do in could_not_determine.")
+    return line
+
+
 def run_agent(client: ModelClient, goal: str, tools: list[Tool],
-              output_schema: type[BaseModel], max_steps: int = 12,
-              log: Callable[[str], None] = print) -> RunResult:
-    """Run the loop until the model answers in the output schema or max_steps is reached."""
-    # Stop condition, written before the code: the run ends when the model answers without
-    # asking for a tool and the answer fits output_schema (done), or after max_steps (cap).
+              output_schema: type[BaseModel], limits: Limits | None = None,
+              failures: FailureInjector | None = None,
+              log: Callable[[str], None] = print, clock: Callable[[], float] = time.monotonic,
+              ) -> RunResult:
+    """Run the loop until it answers, or a step, token or time ceiling is reached."""
+    # Stop conditions, written before the code: the run ends when the model answers without
+    # asking for a tool and the answer fits output_schema (done); or when the step cap, the
+    # token budget or the time limit is reached; or when the model call fails for good.
+    limits = limits or Limits()
+    failures = failures or FailureInjector()
     history = [Message(role="user", text=goal)]
     tools_by_name = {tool.name: tool for tool in tools}
     usage, trace, counts = Usage(), [], {"calls": 0, "errors": 0}
+    failed_rounds = 0  # consecutive rounds in which every tool call failed
+    started = clock()
 
     def note(line: str) -> None:
         """Record a trace line and show it."""
@@ -60,12 +93,25 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
         log(line)
 
     def result(writeup, reason: str, step: int) -> RunResult:
-        """Package the run's outcome."""
+        """Package the run's outcome, keeping all the work done so far."""
         return RunResult(writeup, reason, step, usage, cost_usd(client.model, usage),
                          counts["calls"], counts["errors"], trace)
 
-    for step in range(1, max_steps + 1):
-        reply = client.reply(SYSTEM_PROMPT, history, tools, output_schema)
+    for step in range(1, limits.max_steps + 1):
+        spent = usage.input_tokens + usage.output_tokens  # thinking is counted in output
+        if spent >= limits.budget_tokens:
+            return result(None, f"token budget of {limits.budget_tokens:,} spent", step - 1)
+        if clock() - started >= limits.max_seconds:
+            return result(None, f"time limit of {limits.max_seconds:.0f} s reached", step - 1)
+        if failed_rounds >= FAILED_ROUNDS_BEFORE_STOP:
+            return result(None, f"gave up: every tool call failed {failed_rounds} rounds in a row",
+                          step - 1)
+        try:
+            reply = client.reply(SYSTEM_PROMPT + budget_line(usage, limits, step, failed_rounds),
+                                 history, tools, output_schema)
+        except ModelError as exc:
+            note(f"step {step} · model call failed: {exc}")
+            return result(None, f"model error: {type(exc).__name__}", step)
         usage.add(reply.usage)
         history.append(reply.message)
         tokens = f"{reply.usage.input_tokens:,} in / {reply.usage.output_tokens:,} out"
@@ -77,12 +123,16 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
                 return result(None, f"answer did not match the schema: {short(exc, 200)}", step)
         results = []
         for call in reply.tool_calls:
-            outcome = run_tool(tools_by_name, call.name, call.args)
+            if failures.should_fail():
+                outcome = {"error": f"{call.name} failed: injected failure (test switch)"}
+            else:
+                outcome = run_tool(tools_by_name, call.name, call.args)
             counts["calls"] += 1
             counts["errors"] += "error" in outcome
             note(f"step {step} · {call.name}({short(call.args, 60)}) → {short(outcome, 70)}")
             results.append({"id": call.id, "name": call.name, "result": outcome})
+        failed_rounds = failed_rounds + 1 if all("error" in r["result"] for r in results) else 0
         # All results for this turn go back in ONE message, each with its call's id.
         history.append(Message(role="tool", tool_results=results))
         note(f"step {step} · {len(results)} tool call(s) · {tokens}")
-    return result(None, f"step cap of {max_steps} reached", max_steps)
+    return result(None, f"step cap of {limits.max_steps} reached", limits.max_steps)

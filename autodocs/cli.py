@@ -9,9 +9,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from autodocs.agent import run_agent
+from autodocs.agent import Limits, run_agent
 from autodocs.llm import PRICES_USD_PER_MILLION, GeminiClient
 from autodocs.repo_tools import Workspace, make_repo_tools
+from autodocs.tools import FailureInjector
 from autodocs.writeup import Writeup, correct_against_facts
 
 # Cheapest per finished run in the 2026-11-13 comparison (reports/slot1-report.md).
@@ -31,6 +32,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--repo", required=True, help="path to a local clone of the target repo")
     parser.add_argument("--base", default="main", help="branch to compare against")
     parser.add_argument("--max-steps", type=int, default=12, help="hard step cap")
+    parser.add_argument("--budget-tokens", type=int, default=60_000, help="run token budget")
+    parser.add_argument("--max-seconds", type=float, default=300, help="wall-clock limit")
     parser.add_argument("--out", default="runs", help="folder for run records")
     return parser.parse_args(argv)
 
@@ -41,8 +44,8 @@ def validate(args: argparse.Namespace, api_key: str | None, model: str) -> None:
         raise InputError("GEMINI_API_KEY is not set (copy .env.example to .env)")
     if model not in PRICES_USD_PER_MILLION:
         raise InputError(f"no price recorded for {model}; known: {sorted(PRICES_USD_PER_MILLION)}")
-    if args.max_steps < 1:
-        raise InputError("limits too small: need max-steps ≥ 1")
+    if args.max_steps < 1 or args.budget_tokens < 1_000 or args.max_seconds < 10:
+        raise InputError("limits too small: need max-steps ≥ 1, budget ≥ 1,000, seconds ≥ 10")
     repo = Path(args.repo)
     if not (repo / ".git").exists():
         raise InputError(f"{repo} is not a git repository")
@@ -70,7 +73,7 @@ def to_markdown(branch: str, writeup: Writeup) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run AutoDocs on one branch and save the run record."""
+    """Run AutoDocs on one branch and save the run record, whatever happens."""
     args = parse_args(argv)
     logging.getLogger("google_genai.types").setLevel(logging.ERROR)  # SDK chatter on tool turns
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -83,10 +86,12 @@ def main(argv: list[str] | None = None) -> int:
 
     safe_name = args.branch.replace("/", "_")
     workspace = Workspace(args.repo, args.branch, args.base, Path(".work") / safe_name)
-    client = GeminiClient(api_key, model)
-    goal = GOAL.format(branch=args.branch, base=args.base)
-    print(f"AutoDocs · {args.branch} vs {args.base} · {model} · cap {args.max_steps} steps")
-    run = run_agent(client, goal, make_repo_tools(workspace), Writeup, args.max_steps)
+    limits = Limits(args.max_steps, args.budget_tokens, args.max_seconds)
+    failures = FailureInjector(os.environ.get("AUTODOCS_FAIL_TOOL_CALLS", ""))
+    print(f"AutoDocs · {args.branch} vs {args.base} · {model} · cap {limits.max_steps} steps, "
+          f"{limits.budget_tokens:,} tokens, {limits.max_seconds:.0f} s")
+    run = run_agent(GeminiClient(api_key, model), GOAL.format(branch=args.branch, base=args.base),
+                    make_repo_tools(workspace), Writeup, limits, failures)
 
     changed = workspace.changed_functions()
     corrections = (correct_against_facts(run.writeup, changed["unparseable"])
@@ -97,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         "branch": args.branch, "base": args.base, "model": model,
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "stop_reason": run.stop_reason, "steps": run.steps, "tool_calls": run.tool_calls,
-        "tool_errors": run.tool_errors,
+        "tool_errors": run.tool_errors, "limits": vars(limits),
         "usage": vars(run.usage), "cost_usd": round(run.cost_usd, 6),
         "changed": changed, "corrections": corrections,
         "writeup": run.writeup.model_dump() if run.writeup else None,

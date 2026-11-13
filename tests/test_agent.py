@@ -2,8 +2,9 @@
 
 import json
 
-from autodocs.agent import run_agent
-from autodocs.tools import Tool
+from autodocs.agent import Limits, run_agent
+from autodocs.llm import ModelUnavailable
+from autodocs.tools import FailureInjector, Tool
 from autodocs.writeup import Writeup
 
 ANSWER = json.dumps({
@@ -30,8 +31,8 @@ def test_stops_on_final_answer(fake_client):
 def test_step_cap_stops_a_runaway_loop(fake_client):
     """A model that never stops asking is cut off at max_steps."""
     client = fake_client([[("count_lines", {"path": "a"})]] * 50)
-    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup, max_steps=4,
-                    log=lambda _: None)
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    Limits(max_steps=4), log=lambda _: None)
     assert run.stop_reason == "step cap of 4 reached"
     assert run.writeup is None
     assert run.tool_calls == 4
@@ -85,6 +86,87 @@ def test_tool_exception_becomes_error_result(fake_client):
     sent = client.histories[1][-1].tool_results[0]["result"]
     assert sent == {"error": "broken_tool failed: OSError: disk on fire"}
     assert run.stop_reason == "done" and run.tool_errors == 1
+
+
+def test_failure_injection_every_call(fake_client):
+    """AUTODOCS_FAIL_TOOL_CALLS=every fails each call without running the tool."""
+    client = fake_client([[("count_lines", {"path": "a"})], [("count_lines", {"path": "b"})],
+                          ANSWER])
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    failures=FailureInjector("every"), log=lambda _: None)
+    assert run.tool_errors == 2 and run.stop_reason == "done"  # the model chose to answer
+
+
+def test_failure_injection_numbers():
+    """'2,3' fails only the second and third calls."""
+    injector = FailureInjector("2,3")
+    assert [injector.should_fail() for _ in range(4)] == [False, True, True, False]
+
+
+def test_budget_is_written_into_every_turn_and_stops_the_run(fake_client):
+    """Each call carries the budget line; once spent, the run stops."""
+    seen = []
+
+    class Recording(fake_client):
+        """Remember the system prompt of each call."""
+
+        def reply(self, system, history, tools, output_schema=None):
+            """Record, then answer as scripted."""
+            seen.append(system.splitlines()[-1])
+            return super().reply(system, history, tools, output_schema)
+    client = Recording([[("count_lines", {"path": "a"})]] * 10)
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    Limits(budget_tokens=2_500), log=lambda _: None)
+    assert seen[0] == "Budget: 0 of 2,500 tokens used; step 1 of 12."
+    assert seen[1].startswith("Budget: 1,100 of 2,500")
+    assert run.stop_reason == "token budget of 2,500 spent" and run.steps == 3
+
+
+def test_time_limit(fake_client):
+    """The wall clock is checked before each step."""
+    ticks = iter([0, 0, 400])
+    client = fake_client([[("count_lines", {"path": "a"})]] * 5)
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    Limits(max_seconds=300), log=lambda _: None, clock=lambda: next(ticks))
+    assert run.stop_reason == "time limit of 300 s reached" and run.steps == 1
+
+
+def test_model_error_keeps_the_work_done(fake_client):
+    """A failing model call ends the run but keeps the trace and the tokens spent."""
+
+    class FailsSecond(fake_client):
+        """Fail on the second call."""
+
+        def reply(self, system, history, tools, output_schema=None):
+            """Raise once a first turn has happened."""
+            if self.histories:
+                raise ModelUnavailable("503 high demand")
+            return super().reply(system, history, tools, output_schema)
+    client = FailsSecond([[("count_lines", {"path": "a"})]])
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    log=lambda _: None)
+    assert run.stop_reason == "model error: ModelUnavailable"
+    assert run.usage.input_tokens == 1000 and len(run.trace) == 3
+
+
+def test_engine_nudges_then_gives_up_when_every_tool_fails(fake_client):
+    """After 2 all-failed rounds the turn says 'answer now'; after 4 the engine stops."""
+    seen = []
+
+    class Recording(fake_client):
+        """Remember the last system-prompt line."""
+
+        def reply(self, system, history, tools, output_schema=None):
+            """Record, then answer as scripted."""
+            seen.append(system.splitlines()[-1])
+            return super().reply(system, history, tools, output_schema)
+    client = Recording([[("count_lines", {"path": "a"})]] * 10)
+    run = run_agent(client, "goal", [Tool.from_function(count_lines)], Writeup,
+                    failures=FailureInjector("every"), log=lambda _: None)
+    assert "stop calling tools" not in seen[1]
+    assert "last 2 rounds failed" in seen[2]
+    assert run.stop_reason == "gave up: every tool call failed 4 rounds in a row"
+    assert run.steps == 4
 
 
 def test_tool_error_is_sent_without_a_traceback(fake_client):

@@ -59,3 +59,17 @@ def run_tool(tools: dict[str, Tool], name: str, args: dict) -> dict:
     except Exception as exc:  # errors are data: the model reads this and decides what to do
         return {"error": f"{name} failed: {type(exc).__name__}: {exc}"}
 
+
+class FailureInjector:
+    """Fail chosen tool calls on purpose, to see how the agent copes (AUTODOCS_FAIL_TOOL_CALLS)."""
+
+    def __init__(self, setting: str = ""):
+        """setting: '' (off), 'every', or comma-separated call numbers such as '2,3'."""
+        self.every = setting.strip().lower() == "every"
+        self.numbers = {int(n) for n in setting.split(",") if n.strip().isdigit()}
+        self.count = 0
+
+    def should_fail(self) -> bool:
+        """Count this call and say whether to fail it."""
+        self.count += 1
+        return self.every or self.count in self.numbers
