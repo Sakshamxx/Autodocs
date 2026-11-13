@@ -4,12 +4,13 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from autodocs.agent import run_agent
-from autodocs.llm import GeminiClient
+from autodocs.llm import PRICES_USD_PER_MILLION, GeminiClient
 from autodocs.repo_tools import Workspace, make_repo_tools
 from autodocs.writeup import Writeup
 
@@ -17,6 +18,10 @@ from autodocs.writeup import Writeup
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 GOAL = ("Document the branch '{branch}' (compared with '{base}'): write the pull request "
         "write-up and fix any missing or wrong docstrings of the functions it changes.")
+
+
+class InputError(Exception):
+    """The run would fail before it starts; caught before any money is spent."""
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -28,6 +33,27 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=12, help="hard step cap")
     parser.add_argument("--out", default="runs", help="folder for run records")
     return parser.parse_args(argv)
+
+
+def validate(args: argparse.Namespace, api_key: str | None, model: str) -> None:
+    """Check everything that can be checked for free, before the first model call."""
+    if not api_key:
+        raise InputError("GEMINI_API_KEY is not set (copy .env.example to .env)")
+    if model not in PRICES_USD_PER_MILLION:
+        raise InputError(f"no price recorded for {model}; known: {sorted(PRICES_USD_PER_MILLION)}")
+    if args.max_steps < 1:
+        raise InputError("limits too small: need max-steps ≥ 1")
+    repo = Path(args.repo)
+    if not (repo / ".git").exists():
+        raise InputError(f"{repo} is not a git repository")
+    for ref in (args.branch, args.base):
+        found = subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref], cwd=repo,
+                               capture_output=True)
+        if found.returncode != 0:
+            raise InputError(f"branch '{ref}' does not exist in {repo}")
+    diff = subprocess.run(["git", "diff", "--quiet", f"{args.base}...{args.branch}"], cwd=repo)
+    if diff.returncode == 0:
+        raise InputError(f"'{args.branch}' has no changes compared with '{args.base}'")
 
 
 def to_markdown(branch: str, writeup: Writeup) -> str:
@@ -48,10 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.getLogger("google_genai.types").setLevel(logging.ERROR)  # SDK chatter on tool turns
     api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("GEMINI_API_KEY is not set (copy .env.example to .env)", file=sys.stderr)
-        return 2
     model = os.environ.get("AUTODOCS_MODEL", DEFAULT_MODEL)
+    try:
+        validate(args, api_key, model)
+    except InputError as exc:
+        print(f"Not started: {exc}", file=sys.stderr)
+        return 2
+
     safe_name = args.branch.replace("/", "_")
     workspace = Workspace(args.repo, args.branch, args.base, Path(".work") / safe_name)
     client = GeminiClient(api_key, model)
