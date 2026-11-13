@@ -10,9 +10,10 @@ class FunctionNote(BaseModel):
 
     path: str = Field(description="File path from the repo root.")
     function: str = Field(description="Function name, or Class.method.")
-    body: Literal["implemented", "empty", "not read"] = Field(
+    body: Literal["implemented", "empty", "not read", "file does not parse"] = Field(
         description="'empty' if the body is only ..., pass or a TODO; 'not read' if you did not "
-                    "open it. Describe behaviour only when 'implemented'.")
+                    "open it; 'file does not parse' if its file has a syntax error. "
+                    "Describe behaviour only when 'implemented'.")
     what_it_does: str = Field(description="One sentence, only from code you read.")
     docstring_updated: bool = Field(description="True if you called write_docstring for it.")
 
@@ -29,3 +30,19 @@ class Writeup(BaseModel):
     could_not_determine: list[str] = Field(
         description="Required. What you could not establish from code you read: empty bodies, "
                     "files that do not parse, helpers you did not open. [] only if nothing.")
+
+
+def correct_against_facts(writeup: Writeup, unparseable: list[str]) -> list[str]:
+    """Fix what code knows for certain (files that don't parse); return each correction made."""
+    corrections = []
+    for note in writeup.functions:
+        if note.path in unparseable and note.body != "file does not parse":
+            corrections.append(f"{note.path}::{note.function}: body '{note.body}' → "
+                               "'file does not parse'")
+            note.body = "file does not parse"
+    for path in unparseable:
+        reason = f"{path} does not parse, so its functions could not be read"
+        if not any(path in item and "parse" in item for item in writeup.could_not_determine):
+            writeup.could_not_determine.append(reason)
+            corrections.append(f"added to could_not_determine: {reason}")
+    return corrections

@@ -60,3 +60,18 @@ def test_validation_rejects_unknown_model_and_tiny_limits(sample_repo):
     with pytest.raises(InputError, match="limits too small"):
         validate(small, "key", "gemini-3.5-flash-lite")
 
+
+def test_facts_override_the_model_for_unparseable_files():
+    """A function in a broken file is forced to 'file does not parse', and the reason added."""
+    from autodocs.writeup import correct_against_facts
+    writeup = Writeup(title="t", summary="s", changes=[], release_note="",
+                      functions=[FunctionNote(path="r/stock.py", function="low_stock",
+                                              body="implemented", what_it_does="guess",
+                                              docstring_updated=False)],
+                      could_not_determine=["r/stock.py"])
+    corrections = correct_against_facts(writeup, ["r/stock.py"])
+    assert writeup.functions[0].body == "file does not parse"
+    assert "r/stock.py does not parse, so its functions could not be read" in \
+        writeup.could_not_determine
+    assert len(corrections) == 2
+    assert correct_against_facts(writeup, ["r/stock.py"]) == []  # already correct

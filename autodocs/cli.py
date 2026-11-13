@@ -12,7 +12,7 @@ from pathlib import Path
 from autodocs.agent import run_agent
 from autodocs.llm import PRICES_USD_PER_MILLION, GeminiClient
 from autodocs.repo_tools import Workspace, make_repo_tools
-from autodocs.writeup import Writeup
+from autodocs.writeup import Writeup, correct_against_facts
 
 # Cheapest per finished run in the 2026-11-13 comparison (reports/slot1-report.md).
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
@@ -88,13 +88,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"AutoDocs · {args.branch} vs {args.base} · {model} · cap {args.max_steps} steps")
     run = run_agent(client, goal, make_repo_tools(workspace), Writeup, args.max_steps)
 
+    changed = workspace.changed_functions()
+    corrections = (correct_against_facts(run.writeup, changed["unparseable"])
+                   if run.writeup else [])
+    for line in corrections:
+        print(f"corrected: {line}")
     record = {
         "branch": args.branch, "base": args.base, "model": model,
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "stop_reason": run.stop_reason, "steps": run.steps, "tool_calls": run.tool_calls,
         "tool_errors": run.tool_errors,
         "usage": vars(run.usage), "cost_usd": round(run.cost_usd, 6),
-        "changed": workspace.changed_functions(),
+        "changed": changed, "corrections": corrections,
         "writeup": run.writeup.model_dump() if run.writeup else None,
         "docstring_patch": workspace.docstring_patch(), "trace": run.trace,
     }

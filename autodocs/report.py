@@ -29,8 +29,9 @@ def docstrings_edited(record: dict) -> int:
 def table(records: list[dict]) -> str:
     """Render the runs as a Markdown table."""
     rows = ["| Branch | Model | Stop | Steps | Tool calls | Input tokens | Output tokens | "
-            "Cost (USD) | Changed functions covered | Docstrings edited | Could not determine |",
-            "|---|---|---|---|---|---|---|---|---|---|---|"]
+            "Cost (USD) | Changed functions covered | Docstrings edited | Could not determine | "
+            "Corrected by code |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in records:
         covered, total, _ = coverage(r)
         unknowns = len(r["writeup"]["could_not_determine"]) if r["writeup"] else "-"
@@ -38,7 +39,7 @@ def table(records: list[dict]) -> str:
                     f"{r['tool_calls']} | {r['usage']['input_tokens']:,} | "
                     f"{r['usage']['output_tokens'] + r['usage'].get('thinking_tokens', 0):,} | "
                     f"{r['cost_usd']:.5f} | {covered}/{total} | {docstrings_edited(r)} | "
-                    f"{unknowns} |")
+                    f"{unknowns} | {len(r.get('corrections', []))} |")
     return "\n".join(rows)
 
 
