@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 # Dollars per 1M tokens, from https://aistudio.google.com/docs/pricing (checked 2026-11-13).
 # Output prices include thinking tokens. Re-check before every batch: prices change.
@@ -62,8 +63,9 @@ class ModelClient(Protocol):
 
     model: str
 
-    def reply(self, system: str, history: list[Message], tools: list) -> ModelReply:
-        """Send the conversation (and the tools on offer) and return the model's next turn."""
+    def reply(self, system: str, history: list[Message], tools: list,
+              output_schema: type[BaseModel] | None = None) -> ModelReply:
+        """Send the conversation and the tools; with output_schema, the answer must fit it."""
         ...
 
     def count_tokens(self, history: list[Message]) -> int:
@@ -114,12 +116,17 @@ class GeminiClient:
             parameters_json_schema=tool.args_model.model_json_schema()) for tool in tools]
         return [types.Tool(function_declarations=declarations)]
 
-    def reply(self, system: str, history: list[Message], tools: list) -> ModelReply:
+    def reply(self, system: str, history: list[Message], tools: list,
+              output_schema: type[BaseModel] | None = None) -> ModelReply:
         """Send the conversation and tools to Gemini and return its next turn."""
         config = types.GenerateContentConfig(
             system_instruction=system, tools=self.to_tools(tools),
             # We run tools ourselves: that is the agent loop we are writing.
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+        if output_schema is not None:
+            # The final answer must be JSON that fits the pydantic model.
+            config.response_mime_type = "application/json"
+            config.response_schema = output_schema
         response = self.client.models.generate_content(
             model=self.model, contents=self.to_contents(history), config=config)
         content = response.candidates[0].content
