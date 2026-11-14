@@ -1,0 +1,14 @@
+.venv
+.git
+.work
+.env
+.env.*
+.pytest_cache
+.ruff_cache
+tests
+runs/before-prompt-fix
+runs/before-body-field
+runs/compare
+runs/s3-rehearsal
+runs-v2
+**/__pycache__

@@ -1,10 +1,12 @@
 """The model interface: every model call goes through ModelClient, so providers can be swapped."""
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx2
+import openai
 from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel
@@ -16,7 +18,11 @@ PRICES_USD_PER_MILLION = {
     "gemini-3.1-flash-lite": {"input": 0.25, "cached": 0.025, "output": 1.50},
     "gemini-3.5-flash-lite": {"input": 0.30, "cached": 0.03, "output": 2.50},
     "gemini-3.6-flash": {"input": 0.75, "cached": 0.075, "output": 3.75},  # until 2026-12-31
+    # Local models through Ollama: no per-token bill (your own machine pays in time and power).
+    "qwen3-4b-32k": {"input": 0.0, "cached": 0.0, "output": 0.0},
 }
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
 
 # The adapter's own retry policy. The SDK retries these status codes with exponential
 # back-off; 400 (bad request) and 429 (quota) are deliberately NOT on the list.
@@ -110,11 +116,11 @@ class ModelClient(Protocol):
 
     def reply(self, system: str, history: list[Message], tools: list,
               output_schema: type[BaseModel] | None = None) -> ModelReply:
-        """Send the conversation and the tools; with output_schema, the answer must fit it."""
+        """Send the conversation and return the model's next turn."""
         ...
 
     def count_tokens(self, history: list[Message]) -> int:
-        """Ask the provider how many input tokens the conversation is."""
+        """Ask the provider how many input tokens this conversation is."""
         ...
 
 
@@ -187,11 +193,13 @@ class GeminiClient:
 
     def reply(self, system: str, history: list[Message], tools: list,
               output_schema: type[BaseModel] | None = None) -> ModelReply:
-        """Send the conversation and tools to Gemini and return its next turn."""
+        """Send the conversation to Gemini and return its next turn."""
         config = types.GenerateContentConfig(
-            system_instruction=system, tools=self.to_tools(tools),
+            system_instruction=system,
+            tools=self.to_tools(tools),
             # We run tools ourselves: that is the agent loop we are writing.
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
         config.max_output_tokens = MAX_OUTPUT_TOKENS
         if output_schema is not None:
             # The final answer must be JSON that fits the pydantic model.
@@ -249,3 +257,93 @@ class GeminiClient:
         """Ask Gemini how many input tokens the messages are (the system prompt isn't counted)."""
         return self.client.models.count_tokens(model=self.model,
                                                contents=self.to_contents(history)).total_tokens
+
+
+class OpenAICompatibleClient:
+    """ModelClient for any OpenAI-style Chat Completions API: OpenAI itself, or Ollama locally."""
+
+    def __init__(self, model: str, base_url: str | None = None, api_key: str = "ollama"):
+        """Create the SDK client; Ollama ignores the key but the SDK needs one."""
+        if model not in PRICES_USD_PER_MILLION:
+            raise ValueError(f"no price recorded for {model}; add it to PRICES_USD_PER_MILLION")
+        self.model = model
+        self.client = openai.OpenAI(base_url=base_url, api_key=api_key,
+                                    timeout=REQUEST_TIMEOUT_S * 3, max_retries=1)
+
+    def to_messages(self, system: str, history: list[Message]) -> list[dict]:
+        """Convert our messages into Chat Completions messages."""
+        messages = [{"role": "system", "content": system}]
+        for message in history:
+            if message.role == "model":
+                messages.append(message.raw)
+            elif message.role == "tool":
+                messages += [{"role": "tool", "tool_call_id": r["id"],
+                              "content": json.dumps(r["result"])} for r in message.tool_results]
+            else:
+                messages.append({"role": "user", "content": message.text})
+        return messages
+
+    def call(self, messages: list[dict], tools: list, output_schema) -> ModelReply:
+        """One Chat Completions call, with errors mapped to ours (most specific first)."""
+        extra = {}
+        if tools:
+            extra["tools"] = [{"type": "function", "function": {
+                "name": t.name, "description": t.description,
+                "parameters": t.args_model.model_json_schema()}} for t in tools]
+        if output_schema is not None:
+            extra["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": output_schema.__name__, "schema": output_schema.model_json_schema()}}
+        try:
+            # max_tokens matters here: a small local model can otherwise generate without end.
+            response = self.client.chat.completions.create(
+                model=self.model, messages=messages, max_tokens=MAX_OUTPUT_TOKENS, **extra)
+        except openai.APITimeoutError as exc:
+            raise ModelTimeout(f"no answer within {REQUEST_TIMEOUT_S * 3} s") from exc
+        except openai.APIConnectionError as exc:
+            raise ModelUnavailable(f"cannot reach {self.client.base_url} (is it running?)") from exc
+        except openai.AuthenticationError as exc:
+            raise AuthError(f"the key was refused: {exc.message}") from exc
+        except openai.RateLimitError as exc:
+            raise QuotaExceeded(f"429: {exc.message}") from exc
+        except openai.BadRequestError as exc:
+            raise BadRequest(f"request rejected: {exc.message}") from exc
+        except openai.APIStatusError as exc:
+            raise ModelUnavailable(f"server error ({exc.status_code}): {exc.message}") from exc
+        return self.to_reply(response)
+
+    def to_reply(self, response) -> ModelReply:
+        """Turn a Chat Completions response into a ModelReply."""
+        choice = response.choices[0]
+        calls = []
+        for call in choice.message.tool_calls or []:
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {"invalid_json": call.function.arguments}  # becomes a validation error
+            calls.append(ToolCall(id=call.id, name=call.function.name, args=args))
+        usage = response.usage
+        cached = getattr(usage.prompt_tokens_details, "cached_tokens", 0) or 0 \
+            if usage and usage.prompt_tokens_details else 0
+        used = Usage(input_tokens=usage.prompt_tokens if usage else 0,
+                     output_tokens=usage.completion_tokens if usage else 0, cached_tokens=cached)
+        text = choice.message.content or ""
+        message = Message(role="model", text=text, tool_calls=calls,
+                          raw=choice.message.model_dump(exclude_none=True))
+        return ModelReply(text, calls, used, message, cut_off=choice.finish_reason == "length")
+
+    def reply(self, system: str, history: list[Message], tools: list,
+              output_schema: type[BaseModel] | None = None) -> ModelReply:
+        """Next turn. Tools first; the schema only once the model stops calling tools."""
+        messages = self.to_messages(system, history)
+        # Some OpenAI-style servers (Ollama + Qwen, 2026-11-13) ignore tools when a schema is
+        # also sent, so we never send both: read with tools, then ask once for the schema.
+        first = self.call(messages, tools, None if tools else output_schema)
+        if first.tool_calls or output_schema is None or not tools:
+            return first
+        final = self.call(messages, [], output_schema)
+        final.usage.add(first.usage)
+        return final
+
+    def count_tokens(self, history: list[Message]) -> int:
+        """Chat Completions has no free counting call; estimate at 4 characters per token."""
+        return sum(len(m.text) + len(json.dumps(m.tool_results)) for m in history) // 4
