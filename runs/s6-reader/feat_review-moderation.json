@@ -1,0 +1,116 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "writer_model": null,
+  "duration_s": 5.9,
+  "finished_at": "2026-11-14T01:25:30+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 5830,
+    "output_tokens": 779,
+    "thinking_tokens": 0,
+    "cached_tokens": 0
+  },
+  "cost_usd": 0.003697,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 5830,
+      "output_tokens": 779,
+      "thinking_tokens": 0,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(reviews): add review moderation and flagging system",
+    "summary": "Adds customer review flagging and admin moderation capabilities. Reviews automatically become hidden after receiving three flags, and are excluded from public product ratings while hidden. Includes a new migration and API endpoints for flagging reviews and listing hidden ones.",
+    "changes": [
+      "Added status field to reviews and created review_flags table via migration 0004.",
+      "Added POST /reviews/<id>/flag endpoint allowing customers to flag reviews with a valid reason.",
+      "Added GET /reviews/hidden endpoint for administrators to view hidden reviews.",
+      "Updated public product reviews and rating summaries to exclude hidden reviews.",
+      "Added unit tests covering the flagging rules, auto-hiding behavior, and admin-only access."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Flags a review by ID with a given reason on behalf of the current user and returns its updated status and flag count.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "list_hidden_reviews",
+        "body": "implemented",
+        "what_it_does": "Lists paginated reviews hidden by flags for administrators only.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query for published reviews for a product, ordered by creation date newest first.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "rating_summary",
+        "body": "implemented",
+        "what_it_does": "Calculates the average rating and count of published reviews for a given product.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Records a review flag from a user after validating reasons, ensuring users cannot flag their own or duplicate flags, and hides the review if the flag threshold is reached.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "hidden_review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query for hidden reviews, ordered by ID oldest first.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "score_review_text",
+        "body": "empty",
+        "what_it_does": "Placeholder function for scoring review text with a moderation model.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Customers can flag reviews (POST /reviews/<id>/flag). Three flags hide a review; admins list hidden reviews at GET /reviews/hidden.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 final answer (gemini-3.5-flash-lite) \u00b7 5,173 in / 769 out"
+  ]
+}

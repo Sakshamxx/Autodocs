@@ -1,0 +1,103 @@
+{
+  "branch": "feat/coupon-stacking",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "writer_model": "gemini-3.6-flash",
+  "duration_s": 17.6,
+  "finished_at": "2026-11-14T01:26:56+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 6550,
+    "output_tokens": 982,
+    "thinking_tokens": 2263,
+    "cached_tokens": 0
+  },
+  "cost_usd": 0.014676,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 3775,
+      "output_tokens": 565,
+      "thinking_tokens": 0,
+      "cached_tokens": 0
+    },
+    "gemini-3.6-flash": {
+      "input_tokens": 2775,
+      "output_tokens": 417,
+      "thinking_tokens": 2263,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/services/coupons.py::kind_already_applied",
+      "shoplite/services/coupons.py::apply_coupon",
+      "shoplite/services/pricing.py::quote_cart",
+      "shoplite/services/pricing.py::stack_discounts"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(coupons): allow stacking one percent and one flat coupon",
+    "summary": "Allows orders to accept up to two coupons per cart, requiring one percent coupon and one flat coupon. When calculating pricing quotes, percentage discounts are applied first against the full subtotal before flat discounts are applied to the remaining balance.",
+    "changes": [
+      "Allow stacking up to two coupons on an order provided one is a percentage coupon and one is a flat coupon.",
+      "Apply percentage coupon discounts first to the full subtotal before applying flat coupon discounts to the remaining balance."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "kind_already_applied",
+        "body": "implemented",
+        "what_it_does": "Returns True if any coupon currently applied to the cart shares the given coupon kind.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "apply_coupon",
+        "body": "implemented",
+        "what_it_does": "Attaches a coupon to a user's cart after validating that the coupon is not already applied, the cart has fewer than two coupons, and no coupon of the same kind is already applied.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "quote_cart",
+        "body": "implemented",
+        "what_it_does": "Calculates total costs for a cart by computing stacked coupon discounts and adding shipping rates to the net subtotal.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "stack_discounts",
+        "body": "implemented",
+        "what_it_does": "Orders cart coupons so percentage coupons apply first to the subtotal and flat coupons apply to the remaining subtotal.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Orders can use two coupons: one percent and one flat. Percent coupons apply first.",
+    "could_not_determine": [
+      "cart_subtotal",
+      "check_redeemable",
+      "clock.utcnow",
+      "get_cart",
+      "get_coupon",
+      "shipping.shipping_rate_for"
+    ]
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..2\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 reading done (gemini-3.5-flash-lite) \u00b7 3,118 in / 555 out",
+    "step 2 \u00b7 final answer (gemini-3.6-flash) \u00b7 2,775 in / 417 out"
+  ]
+}

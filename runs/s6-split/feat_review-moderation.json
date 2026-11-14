@@ -1,0 +1,60 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "writer_model": "gemini-3.6-flash",
+  "duration_s": 24.3,
+  "finished_at": "2026-11-14T01:28:21+00:00",
+  "stop_reason": "output cap reached (thinking counts toward it)",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 10660,
+    "output_tokens": 872,
+    "thinking_tokens": 3928,
+    "cached_tokens": 1774
+  },
+  "cost_usd": 0.02199,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 5830,
+      "output_tokens": 722,
+      "thinking_tokens": 0,
+      "cached_tokens": 1774
+    },
+    "gemini-3.6-flash": {
+      "input_tokens": 4830,
+      "output_tokens": 150,
+      "thinking_tokens": 3928,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": null,
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 reading done (gemini-3.5-flash-lite) \u00b7 5,173 in / 712 out",
+    "step 2 \u00b7 answer cut off at the output cap \u00b7 4,830 in / 150 out"
+  ]
+}

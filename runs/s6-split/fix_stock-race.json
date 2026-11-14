@@ -1,0 +1,101 @@
+{
+  "branch": "fix/stock-race",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "writer_model": "gemini-3.6-flash",
+  "duration_s": 10.0,
+  "finished_at": "2026-11-14T01:28:44+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 6721,
+    "output_tokens": 934,
+    "thinking_tokens": 284,
+    "cached_tokens": 0
+  },
+  "cost_usd": 0.007233,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 3860,
+      "output_tokens": 511,
+      "thinking_tokens": 0,
+      "cached_tokens": 0
+    },
+    "gemini-3.6-flash": {
+      "input_tokens": 2861,
+      "output_tokens": 423,
+      "thinking_tokens": 284,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/services/checkout.py::record_failed_payment",
+      "shoplite/services/stock.py::try_reserve",
+      "shoplite/services/stock.py::reserve_for_order",
+      "shoplite/services/stock.py::release_order_holds"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "fix(stock): reserve stock conditionally and release holds on payment failure",
+    "summary": "This branch prevents race conditions during concurrent checkouts by using a single conditional database update to reserve stock. It also ensures stock holds are released immediately when a payment fails or times out, rather than waiting for reservation expiration.",
+    "changes": [
+      "Perform stock reservation via a single conditional UPDATE query checking available quantity.",
+      "Release order stock holds immediately when payment fails or encounters a gateway error.",
+      "Add stock.release_order_holds to release all held reservation entries for an order unless reservation leak fault is enabled."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/checkout.py",
+        "function": "record_failed_payment",
+        "body": "implemented",
+        "what_it_does": "Releases order stock holds, sets order status to payment failed, and records a failed payment attempt.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "try_reserve",
+        "body": "implemented",
+        "what_it_does": "Attempts to reserve a given quantity of stock for a product using a single conditional database update.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "reserve_for_order",
+        "body": "implemented",
+        "what_it_does": "Reserves stock for each line item in an order or raises OutOfStock if sufficient inventory is not available.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "release_order_holds",
+        "body": "implemented",
+        "what_it_does": "Releases all reservation entries for an order unless the reservation leak fault is enabled.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Fixed race conditions during concurrent checkouts and released stock holds immediately on payment failure.",
+    "could_not_determine": [
+      "available_units",
+      "held_entries",
+      "release_entry"
+    ]
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..d\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 656 in / 10 out",
+    "step 2 \u00b7 reading done (gemini-3.5-flash-lite) \u00b7 3,204 in / 501 out",
+    "step 2 \u00b7 final answer (gemini-3.6-flash) \u00b7 2,861 in / 423 out"
+  ]
+}
