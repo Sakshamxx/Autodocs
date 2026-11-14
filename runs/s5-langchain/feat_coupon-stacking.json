@@ -1,0 +1,88 @@
+{
+  "branch": "feat/coupon-stacking",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "langchain",
+  "duration_s": 10.2,
+  "finished_at": "2026-11-15T09:08:16+00:00",
+  "stop_reason": "done",
+  "steps": 4,
+  "tool_calls": 5,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 13129,
+    "output_tokens": 779
+  },
+  "cost_usd": 0.005886,
+  "changed": {
+    "functions": [
+      "shoplite/services/coupons.py::kind_already_applied",
+      "shoplite/services/coupons.py::apply_coupon",
+      "shoplite/services/pricing.py::quote_cart",
+      "shoplite/services/pricing.py::stack_discounts"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(coupons): allow stacking one percent and one flat coupon per order",
+    "summary": "This branch increases the maximum coupons per order from one to two, specifically allowing a cart to hold at most one percent coupon and one flat coupon. It implements discount stacking where percent coupons apply to the full subtotal first and flat coupons apply to the remaining balance. Validation and pricing logic are updated accordingly.",
+    "changes": [
+      "Increased MAX_COUPONS_PER_ORDER to 2 and added kind-based validation to ensure at most one percent and one flat coupon can be applied per order.",
+      "Added kind_already_applied helper function in coupons service.",
+      "Added stack_discounts pricing helper to sort and apply percent coupons before flat coupons.",
+      "Updated cart quote logic to use stack_discounts.",
+      "Added comprehensive test cases covering coupon stacking, discount limits, and redemption logging."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "kind_already_applied",
+        "body": "implemented",
+        "what_it_does": "Returns true if the cart already contains an applied coupon of the specified kind.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "apply_coupon",
+        "body": "implemented",
+        "what_it_does": "Attaches a coupon to the user's cart after verifying it is not already applied, the coupon limit and kind restrictions are respected, and it is redeemable.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "quote_cart",
+        "body": "implemented",
+        "what_it_does": "Computes the subtotal, stacked coupon discounts, shipping rate, and final total for the cart.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "stack_discounts",
+        "body": "implemented",
+        "what_it_does": "Sorts applied coupons to apply percent coupons first and flat coupons to the remaining balance, returning a list of coupon discount tuples.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Orders can now use up to two coupons: one percent coupon and one flat coupon. Percent coupons apply first.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 model \u00b7 read_diff \u00b7 543 in",
+    "step 1 \u00b7 read_diff \u2192 {\"result\": \"diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..2\u2026",
+    "step 2 \u00b7 model \u00b7 open_file, open_file \u00b7 3,002 in",
+    "step 2 \u00b7 open_file \u2192 {\"result\": \"shoplite/services/pricing.py lines 20-50 of 61\\n   20  \\n \u2026",
+    "step 2 \u00b7 open_file \u2192 {\"result\": \"shoplite/services/coupons.py lines 40-100 of 107\\n   40   \u2026",
+    "step 3 \u00b7 model \u00b7 write_docstring, write_docstring \u00b7 4,711 in",
+    "step 3 \u00b7 write_docstring \u2192 {\"result\": \"kind_already_applied already has exactly this docstring; n\u2026",
+    "step 3 \u00b7 write_docstring \u2192 {\"result\": \"stack_discounts already has exactly this docstring; nothin\u2026",
+    "step 4 \u00b7 model \u00b7 answer \u00b7 4,873 in",
+    "finished in 7.0 s \u00b7 done"
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "branch": "fix/stock-race",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "duration_s": 4.4,
+  "finished_at": "2026-11-14T01:12:53+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 3860,
+    "output_tokens": 536
+  },
+  "cost_usd": 0.002498,
+  "changed": {
+    "functions": [
+      "shoplite/services/checkout.py::record_failed_payment",
+      "shoplite/services/stock.py::try_reserve",
+      "shoplite/services/stock.py::reserve_for_order",
+      "shoplite/services/stock.py::release_order_holds"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "fix(stock): prevent race conditions and release holds on failed payments",
+    "summary": "Fixes a concurrency race condition in stock reservation by utilizing a conditional UPDATE statement. Also updates checkout so that failed or timed-out payments immediately release their stock holds rather than waiting for expiration.",
+    "changes": [
+      "Replaced separate stock read-and-write checks with a conditional update in `try_reserve` to prevent race conditions during concurrent checkouts.",
+      "Called `release_order_holds` immediately inside `record_failed_payment` when a payment fails or times out.",
+      "Updated tests to verify that failed payments release holds instantly and that concurrent reservations are safely handled."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/checkout.py",
+        "function": "record_failed_payment",
+        "body": "implemented",
+        "what_it_does": "Mark the order failed, release its stock holds, and save the payment attempt.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "try_reserve",
+        "body": "implemented",
+        "what_it_does": "Hold units in one conditional UPDATE; returns False if there is not enough stock.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "reserve_for_order",
+        "body": "implemented",
+        "what_it_does": "Hold stock for every line of an order using try_reserve, or raise OutOfStock.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/stock.py",
+        "function": "release_order_holds",
+        "body": "implemented",
+        "what_it_does": "Give back all of an order's held stock unless the reservation leak fault is enabled.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Two checkouts at the same moment can no longer both take the last unit thanks to a conditional update, and failed/timed-out payments now release their stock holds immediately.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..d\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 656 in / 10 out",
+    "step 2 \u00b7 final answer \u00b7 3,204 in / 526 out"
+  ]
+}

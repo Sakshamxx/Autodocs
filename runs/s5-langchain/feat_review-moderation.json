@@ -1,0 +1,106 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "langchain",
+  "duration_s": 5.3,
+  "finished_at": "2026-11-15T09:08:22+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 5600,
+    "output_tokens": 750
+  },
+  "cost_usd": 0.003555,
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(reviews): add review flagging and admin moderation",
+    "summary": "Introduces review moderation, allowing authenticated customers to flag reviews with predefined reasons. Accumulating three flags automatically hides a review from product listings and calculations, and administrators can review hidden reports at a new endpoint.",
+    "changes": [
+      "Added a review_flags table and status column on reviews via database migration 0004.",
+      "Added POST /reviews/<id>/flag endpoint allowing users to flag reviews subject to validation rules.",
+      "Added GET /reviews/hidden endpoint for administrators to list and inspect hidden reviews.",
+      "Filtered out hidden reviews from product review lists and rating summaries.",
+      "Added validation rules ensuring authors cannot flag their own reviews and users cannot flag the same review twice."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Flags a review by ID for the current authenticated user with a given reason.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "list_hidden_reviews",
+        "body": "implemented",
+        "what_it_does": "Lists hidden reviews for administrators with pagination and flag counts.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query for published reviews for a product, ordered newest first.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "rating_summary",
+        "body": "implemented",
+        "what_it_does": "Computes rating count and average rating for published reviews of a product.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Records a user flag on a review and hides the review if the flag count reaches the threshold.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "hidden_review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a query selecting hidden reviews ordered by ID.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "score_review_text",
+        "body": "empty",
+        "what_it_does": "Placeholder function for review moderation scoring that is not yet implemented.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Customers can flag reviews (POST /reviews/<id>/flag). Three flags hide a review; admins list hidden reviews at GET /reviews/hidden.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 model \u00b7 read_diff \u00b7 543 in",
+    "step 1 \u00b7 read_diff \u2192 {\"result\": \"diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 2 \u00b7 model \u00b7 answer \u00b7 5,057 in",
+    "finished in 4.8 s \u00b7 done"
+  ]
+}

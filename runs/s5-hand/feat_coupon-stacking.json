@@ -1,0 +1,81 @@
+{
+  "branch": "feat/coupon-stacking",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "duration_s": 3.9,
+  "finished_at": "2026-11-14T01:11:36+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 3775,
+    "output_tokens": 523
+  },
+  "cost_usd": 0.00244,
+  "changed": {
+    "functions": [
+      "shoplite/services/coupons.py::kind_already_applied",
+      "shoplite/services/coupons.py::apply_coupon",
+      "shoplite/services/pricing.py::quote_cart",
+      "shoplite/services/pricing.py::stack_discounts"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(coupons): allow stacking one percent and one flat coupon",
+    "summary": "Orders can now apply up to two coupons concurrently, provided one is a percentage coupon and one is a flat coupon. Percent coupons are applied to the subtotal first, and flat coupons apply to the remainder.",
+    "changes": [
+      "Increased MAX_COUPONS_PER_ORDER from 1 to 2.",
+      "Added kind_already_applied to prevent applying multiple coupons of the same kind to a cart.",
+      "Added stack_discounts to apply percent coupons first and flat coupons to the remaining subtotal.",
+      "Updated pricing quote calculation to use stacked discounts.",
+      "Added and updated coupon stacking tests."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "kind_already_applied",
+        "body": "implemented",
+        "what_it_does": "Returns true if the cart already contains a coupon of the specified kind.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/coupons.py",
+        "function": "apply_coupon",
+        "body": "implemented",
+        "what_it_does": "Attaches a validated coupon to the user's cart ensuring max coupon limits and distinct kinds are respected.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "quote_cart",
+        "body": "implemented",
+        "what_it_does": "Computes the price quote for the cart including stacked discounts and shipping.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/pricing.py",
+        "function": "stack_discounts",
+        "body": "implemented",
+        "what_it_does": "Applies percent coupons first to the subtotal and then flat coupons to the remaining amount.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Orders can use two coupons: one percent and one flat. Percent coupons apply first.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..2\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 final answer \u00b7 3,118 in / 513 out"
+  ]
+}

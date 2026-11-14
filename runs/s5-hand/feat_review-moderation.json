@@ -1,0 +1,104 @@
+{
+  "branch": "feat/review-moderation",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "duration_s": 3.9,
+  "finished_at": "2026-11-14T01:12:16+00:00",
+  "stop_reason": "done",
+  "steps": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 5830,
+    "output_tokens": 728
+  },
+  "cost_usd": 0.003569,
+  "changed": {
+    "functions": [
+      "shoplite/api/reviews.py::flag_review",
+      "shoplite/api/reviews.py::list_hidden_reviews",
+      "shoplite/services/reviews.py::review_query",
+      "shoplite/services/reviews.py::rating_summary",
+      "shoplite/services/reviews.py::flag_review",
+      "shoplite/services/reviews.py::hidden_review_query",
+      "shoplite/services/reviews.py::score_review_text"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(reviews): add customer flag moderation and admin hidden review list",
+    "summary": "Adds review moderation capabilities allowing customers to flag reviews with specific reasons. When a review receives three flags, its status is automatically changed to hidden. Admins can view a paginated list of hidden reviews.",
+    "changes": [
+      "Added a review_flags table and a status field to reviews via migration 0004.",
+      "Added POST /reviews/<id>/flag endpoint for customers to report reviews.",
+      "Added GET /reviews/hidden endpoint for administrators to list reviews hidden by flags.",
+      "Updated public review listings and rating summaries to exclude hidden reviews."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Flags a review by ID with a given reason and returns its updated status and flag count.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/reviews.py",
+        "function": "list_hidden_reviews",
+        "body": "implemented",
+        "what_it_does": "Lists paginated reviews hidden by flags for authenticated administrators.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a select query for published reviews of a product ordered newest first.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "rating_summary",
+        "body": "implemented",
+        "what_it_does": "Calculates the average rating and review count for published reviews of a product.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "flag_review",
+        "body": "implemented",
+        "what_it_does": "Records a review flag from a user, hiding the review if the flag count reaches the threshold.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "hidden_review_query",
+        "body": "implemented",
+        "what_it_does": "Returns a select query for hidden reviews ordered by ID.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/reviews.py",
+        "function": "score_review_text",
+        "body": "empty",
+        "what_it_does": "Placeholder function for review text moderation scoring.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Customers can flag reviews (POST /reviews/<id>/flag). Three flags hide a review; admins list hidden reviews at GET /reviews/hidden.",
+    "could_not_determine": []
+  },
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..3\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 657 in / 10 out",
+    "step 2 \u00b7 final answer \u00b7 5,173 in / 718 out"
+  ]
+}
