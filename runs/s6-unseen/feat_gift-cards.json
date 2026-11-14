@@ -1,0 +1,155 @@
+{
+  "branch": "feat/gift-cards",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "provider": "gemini",
+  "writer_model": null,
+  "duration_s": 8.1,
+  "finished_at": "2026-11-14T01:32:01+00:00",
+  "stop_reason": "done",
+  "steps": 3,
+  "tool_calls": 5,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 19450,
+    "output_tokens": 1237,
+    "thinking_tokens": 0,
+    "cached_tokens": 0
+  },
+  "cost_usd": 0.008927,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 19450,
+      "output_tokens": 1237,
+      "thinking_tokens": 0,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/api/gift_cards.py::issue",
+      "shoplite/api/gift_cards.py::balance",
+      "shoplite/api/orders.py::place_order",
+      "shoplite/models/gift_card.py::GiftCard.to_dict",
+      "shoplite/models/order.py::Order.to_dict",
+      "shoplite/services/checkout.py::record_failed_payment",
+      "shoplite/services/checkout.py::checkout",
+      "shoplite/services/gift_cards.py::issue_gift_card",
+      "shoplite/services/gift_cards.py::get_gift_card",
+      "shoplite/services/gift_cards.py::usable_card",
+      "shoplite/services/gift_cards.py::amount_covered",
+      "shoplite/services/refunds.py::refund_order"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(gift-cards): add gift card support for checkout and refunds",
+    "summary": "Adds a gift card system where admins can issue cards, customers can check balances, and checkout allows paying with an optional gift card alongside the main payment method. Any refunded order also returns the gift card portion back to the gift card balance.",
+    "changes": [
+      "Added GiftCard model and database migration 0004.",
+      "Added POST /gift-cards for admins to issue gift cards and GET /gift-cards/<code> for balance checks.",
+      "Updated checkout to accept an optional gift_card_code, apply the balance towards the order total, and handle full gift card coverage without gateway charges.",
+      "Updated order refunds to restore spent gift card balances back to the respective gift cards."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/api/gift_cards.py",
+        "function": "issue",
+        "body": "implemented",
+        "what_it_does": "Validates admin permissions and request parameters to issue a new gift card.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/gift_cards.py",
+        "function": "balance",
+        "body": "implemented",
+        "what_it_does": "Retrieves and returns the balance and details of a gift card by code.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/api/orders.py",
+        "function": "place_order",
+        "body": "implemented",
+        "what_it_does": "Places an order from the cart, now passing an optional gift card code to checkout.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/models/gift_card.py",
+        "function": "GiftCard.to_dict",
+        "body": "implemented",
+        "what_it_does": "Returns a dictionary serialization of the gift card.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/checkout.py",
+        "function": "record_failed_payment",
+        "body": "implemented",
+        "what_it_does": "Marks an order as failed and records the remaining payment amount after gift card coverage.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/checkout.py",
+        "function": "checkout",
+        "body": "implemented",
+        "what_it_does": "Executes the cart checkout process, applying gift card coverage and charging the remaining balance via payment gateway.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/gift_cards.py",
+        "function": "issue_gift_card",
+        "body": "implemented",
+        "what_it_does": "Creates and persists a new gift card with a unique code and specified amount.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/gift_cards.py",
+        "function": "get_gift_card",
+        "body": "implemented",
+        "what_it_does": "Finds and returns a gift card by its code or raises a NotFound error.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/gift_cards.py",
+        "function": "usable_card",
+        "body": "implemented",
+        "what_it_does": "Validates that a gift card exists, is active, has remaining balance, and has not expired.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/gift_cards.py",
+        "function": "amount_covered",
+        "body": "implemented",
+        "what_it_does": "Calculates how much of the order total can be paid by the gift card balance.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/refunds.py",
+        "function": "refund_order",
+        "body": "implemented",
+        "what_it_does": "Refunds a paid or shipped order by refunding the gateway payment and restoring the gift card balance.",
+        "docstring_updated": false
+      }
+    ],
+    "release_note": "Add gift cards: admins can issue cards via POST /gift-cards, and checkout now accepts a gift_card_code to partially or fully cover order totals.",
+    "could_not_determine": []
+  },
+  "markdown": "# feat(gift-cards): add gift card support for checkout and refunds\n\nAdds a gift card system where admins can issue cards, customers can check balances, and checkout allows paying with an optional gift card alongside the main payment method. Any refunded order also returns the gift card portion back to the gift card balance.\n\n## Changes\n- Added GiftCard model and database migration 0004.\n- Added POST /gift-cards for admins to issue gift cards and GET /gift-cards/<code> for balance checks.\n- Updated checkout to accept an optional gift_card_code, apply the balance towards the order total, and handle full gift card coverage without gateway charges.\n- Updated order refunds to restore spent gift card balances back to the respective gift cards.\n\n## Functions\n- `shoplite/api/gift_cards.py::issue` (implemented): Validates admin permissions and request parameters to issue a new gift card.\n- `shoplite/api/gift_cards.py::balance` (implemented): Retrieves and returns the balance and details of a gift card by code.\n- `shoplite/api/orders.py::place_order` (implemented): Places an order from the cart, now passing an optional gift card code to checkout.\n- `shoplite/models/gift_card.py::GiftCard.to_dict` (implemented): Returns a dictionary serialization of the gift card.\n- `shoplite/services/checkout.py::record_failed_payment` (implemented): Marks an order as failed and records the remaining payment amount after gift card coverage.\n- `shoplite/services/checkout.py::checkout` (implemented): Executes the cart checkout process, applying gift card coverage and charging the remaining balance via payment gateway.\n- `shoplite/services/gift_cards.py::issue_gift_card` (implemented): Creates and persists a new gift card with a unique code and specified amount.\n- `shoplite/services/gift_cards.py::get_gift_card` (implemented): Finds and returns a gift card by its code or raises a NotFound error.\n- `shoplite/services/gift_cards.py::usable_card` (implemented): Validates that a gift card exists, is active, has remaining balance, and has not expired.\n- `shoplite/services/gift_cards.py::amount_covered` (implemented): Calculates how much of the order total can be paid by the gift card balance.\n- `shoplite/services/refunds.py::refund_order` (implemented): Refunds a paid or shipped order by refunding the gateway payment and restoring the gift card balance.\n\n## Could not determine\n- Nothing.\n\n## Release note\nAdd gift cards: admins can issue cards via POST /gift-cards, and checkout now accepts a gift_card_code to partially or fully cover order totals.\n",
+  "docstring_patch": "",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..7\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 656 in / 10 out",
+    "step 2 \u00b7 open_file({'start_line': 1, 'end_line': 50, 'path': 'shoplite/api/gift\u2026) \u2192 {'result': 'shoplite/api/gift_cards.py lines 1-34 of 34\\n    1  \"\"\"Gif\u2026",
+    "step 2 \u00b7 open_file({'path': 'shoplite/services/gift_cards.py', 'end_line': 50, \u2026) \u2192 {'result': 'shoplite/services/gift_cards.py lines 1-48 of 48\\n    1  \"\u2026",
+    "step 2 \u00b7 open_file({'end_line': 100, 'path': 'shoplite/services/checkout.py', '\u2026) \u2192 {'result': 'shoplite/services/checkout.py lines 30-100 of 106\\n   30  \u2026",
+    "step 2 \u00b7 open_file({'end_line': 30, 'start_line': 1, 'path': 'shoplite/services\u2026) \u2192 {'result': 'shoplite/services/refunds.py lines 1-30 of 32\\n    1  \"\"\"R\u2026",
+    "step 2 \u00b7 4 tool call(s) \u00b7 7,833 in / 151 out",
+    "step 3 \u00b7 final answer (gemini-3.5-flash-lite) \u00b7 10,961 in / 1,076 out"
+  ]
+}

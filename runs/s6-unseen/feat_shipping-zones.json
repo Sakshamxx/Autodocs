@@ -1,0 +1,80 @@
+{
+  "branch": "feat/shipping-zones",
+  "base": "main",
+  "model": "gemini-3.5-flash-lite",
+  "engine": "hand",
+  "provider": "gemini",
+  "writer_model": null,
+  "duration_s": 7.3,
+  "finished_at": "2026-11-14T01:32:21+00:00",
+  "stop_reason": "done",
+  "steps": 4,
+  "tool_calls": 3,
+  "tool_errors": 0,
+  "limits": {
+    "max_steps": 12,
+    "budget_tokens": 60000,
+    "max_seconds": 300
+  },
+  "usage": {
+    "input_tokens": 11532,
+    "output_tokens": 567,
+    "thinking_tokens": 0,
+    "cached_tokens": 0
+  },
+  "cost_usd": 0.004877,
+  "usage_by_model": {
+    "gemini-3.5-flash-lite": {
+      "input_tokens": 11532,
+      "output_tokens": 567,
+      "thinking_tokens": 0,
+      "cached_tokens": 0
+    }
+  },
+  "changed": {
+    "functions": [
+      "shoplite/services/shipping.py::zone_for_pincode",
+      "shoplite/services/shipping.py::shipping_rate_for"
+    ],
+    "unparseable": []
+  },
+  "corrections": [],
+  "writeup": {
+    "title": "feat(shipping): calculate shipping rates by zone based on pincode",
+    "summary": "Implement region-based shipping zones using Indian PIN code prefixes, charging different rates for south, north, west, east, northeast, and army postal regions while keeping free shipping for orders of \u20b9999 or more and quoting a standard \u20b949 flat rate before a pincode is provided.",
+    "changes": [
+      "Added zone-based shipping rate calculation depending on the PIN code's first digit or northeast prefixes.",
+      "Updated shipping_rate_for to accept an optional pincode, returning the standard flat rate when pincode is None or free shipping when the order amount meets or exceeds \u20b9999.",
+      "Added new unit tests covering zone-based rates, free shipping across zones, and pre-pincode cart rate quotes."
+    ],
+    "functions": [
+      {
+        "path": "shoplite/services/shipping.py",
+        "function": "zone_for_pincode",
+        "body": "implemented",
+        "what_it_does": "Determines and returns the shipping zone string for a given PIN code by checking northeast prefixes first and then mapping the first digit.",
+        "docstring_updated": false
+      },
+      {
+        "path": "shoplite/services/shipping.py",
+        "function": "shipping_rate_for",
+        "body": "implemented",
+        "what_it_does": "Calculates the shipping charge based on order amount and an optional PIN code, returning zero for free shipping thresholds, the flat rate if no pincode is provided, or the specific zone rate otherwise.",
+        "docstring_updated": true
+      }
+    ],
+    "release_note": "Shipping is now priced by zone based on the PIN code's first digit (south \u20b939, north/west \u20b959, east \u20b969, northeast/APS \u20b999), with free shipping on orders of \u20b9999 or more and a standard \u20b949 quote before checkout.",
+    "could_not_determine": []
+  },
+  "markdown": "# feat(shipping): calculate shipping rates by zone based on pincode\n\nImplement region-based shipping zones using Indian PIN code prefixes, charging different rates for south, north, west, east, northeast, and army postal regions while keeping free shipping for orders of \u20b9999 or more and quoting a standard \u20b949 flat rate before a pincode is provided.\n\n## Changes\n- Added zone-based shipping rate calculation depending on the PIN code's first digit or northeast prefixes.\n- Updated shipping_rate_for to accept an optional pincode, returning the standard flat rate when pincode is None or free shipping when the order amount meets or exceeds \u20b9999.\n- Added new unit tests covering zone-based rates, free shipping across zones, and pre-pincode cart rate quotes.\n\n## Functions\n- `shoplite/services/shipping.py::zone_for_pincode` (implemented): Determines and returns the shipping zone string for a given PIN code by checking northeast prefixes first and then mapping the first digit.\n- `shoplite/services/shipping.py::shipping_rate_for` (implemented): Calculates the shipping charge based on order amount and an optional PIN code, returning zero for free shipping thresholds, the flat rate if no pincode is provided, or the specific zone rate otherwise.\n\n## Could not determine\n- Nothing.\n\n## Release note\nShipping is now priced by zone based on the PIN code's first digit (south \u20b939, north/west \u20b959, east \u20b969, northeast/APS \u20b999), with free shipping on orders of \u20b9999 or more and a standard \u20b949 quote before checkout.\n",
+  "docstring_patch": "diff --git a/shoplite/services/shipping.py b/shoplite/services/shipping.py\nindex e4922b9..a54bb80 100644\n--- a/shoplite/services/shipping.py\n+++ b/shoplite/services/shipping.py\n@@ -41,7 +41,7 @@ def zone_for_pincode(pincode: str) -> str:\n \n \n def shipping_rate_for(amount_paise: int, pincode: str | None) -> int:\n-    \"\"\"Shipping charge for an order of this value (same rate for every pincode).\"\"\"\n+    \"\"\"Shipping charge for an order value and optional PIN code based on shipping zones.\"\"\"\n     if amount_paise >= FREE_SHIPPING_FROM_PAISE:\n         return 0\n     if pincode is None:\n",
+  "trace": [
+    "step 1 \u00b7 read_diff({}) \u2192 {'result': 'diff --git a/CHANGELOG.md b/CHANGELOG.md\\nindex 08226a9..d\u2026",
+    "step 1 \u00b7 1 tool call(s) \u00b7 656 in / 10 out",
+    "step 2 \u00b7 open_file({'end_line': 50, 'start_line': 1, 'path': 'shoplite/services\u2026) \u2192 {'result': 'shoplite/services/shipping.py lines 1-50 of 64\\n    1  \"\"\"\u2026",
+    "step 2 \u00b7 1 tool call(s) \u00b7 3,009 in / 36 out",
+    "step 3 \u00b7 write_docstring({'docstring': 'Shipping charge for an order value and option\u2026) \u2192 {'result': 'docstring set for shipping_rate_for in shoplite/services/s\u2026",
+    "step 3 \u00b7 1 tool call(s) \u00b7 3,889 in / 57 out",
+    "step 4 \u00b7 final answer (gemini-3.5-flash-lite) \u00b7 3,978 in / 464 out"
+  ]
+}

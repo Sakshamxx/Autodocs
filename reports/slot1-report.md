@@ -73,3 +73,36 @@ What the framework path does not do that the hand loop does (read from `langchai
 
 A breaking framework change, rehearsed: in a throwaway environment with `langchain<1` (0.3.30), `from langchain.agents import create_agent` raises `ImportError` and `langchain.agents.middleware` does not exist. LangChain's v1 migration guide explains: `create_agent` replaces `langgraph.prebuilt.create_react_agent`, hooks became middleware, and Python 3.10+ is required.
 
+## S6: traces, the bill, a model per step (2026-11-14; v2)
+
+Every run below was traced to Langfuse (a run span, a generation per model call with usage and cost, an entry per tool call; checked through the v2 observations API).
+
+**One reader** (`gemini-3.5-flash-lite`, `runs/s6-reader`):
+
+| Branch | Model | Stop | Steps | Tool calls | Input tokens | Output tokens | Cost (USD) | Changed functions covered | Docstrings edited | Could not determine | Corrected by code |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `feat/coupon-stacking` | gemini-3.5-flash-lite | done | 2 | 1 | 3,775 | 573 | 0.00257 | 4/4 | 0 | 0 | 0 |
+| `feat/review-moderation` | gemini-3.5-flash-lite | done | 2 | 1 | 5,830 | 779 | 0.00370 | 7/7 | 0 | 0 | 0 |
+| `fix/stock-race` | gemini-3.5-flash-lite | done | 2 | 1 | 3,860 | 505 | 0.00242 | 4/4 | 0 | 0 | 0 |
+
+**Reader + writer** (`gemini-3.5-flash-lite` reads, `gemini-3.6-flash` writes, `runs/s6-split`):
+
+| Branch | Model | Stop | Steps | Tool calls | Input tokens | Output tokens | Cost (USD) | Changed functions covered | Docstrings edited | Could not determine | Corrected by code |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `feat/coupon-stacking` | gemini-3.5-flash-lite → gemini-3.6-flash | done | 2 | 1 | 6,550 | 3,245 | 0.01468 | 4/4 | 0 | 6 | 0 |
+| `feat/review-moderation` | gemini-3.5-flash-lite → gemini-3.6-flash | output cap reached (thinking counts toward it) | 2 | 1 | 10,660 | 4,800 | 0.02199 | 0/7 | 0 | - | 0 |
+| `fix/stock-race` | gemini-3.5-flash-lite → gemini-3.6-flash | done | 2 | 1 | 6,721 | 1,218 | 0.00723 | 4/4 | 0 | 3 | 0 |
+
+The split cost about 5.7× (coupon-stacking) and 3× (stock-race). On review-moderation the writer hit the 4,096-token output cap, because its thinking counts toward the cap: the run stopped with "output cap reached" and no write-up, for $0.022. On key 1, two earlier split runs stopped with `model error: QuotaExceeded` (the 3.6-flash free tier allows 20 requests a day); their records were overwritten when they were rerun on key 2.
+
+**Unseen branches** (`runs/s6-unseen`, first run ever):
+
+| Branch | Model | Stop | Steps | Tool calls | Input tokens | Output tokens | Cost (USD) | Changed functions covered | Docstrings edited | Could not determine | Corrected by code |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `feat/gift-cards` | gemini-3.5-flash-lite | done | 3 | 5 | 19,450 | 1,237 | 0.00893 | 11/12 | 0 | 0 | 0 |
+| `feat/shipping-zones` | gemini-3.5-flash-lite | done | 4 | 3 | 11,532 | 567 | 0.00488 | 2/2 | 1 | 0 | 0 |
+
+On `feat/shipping-zones` the stale `shipping_rate_for` docstring ("same rate for every pincode") was caught and rewritten. On `feat/gift-cards` the write-up missed `Order.to_dict` (11/12).
+
+**Secret scanning:** with pre-commit turned on (`uv run pre-commit install`), gitleaks blocks a commit that adds a Google-key-shaped string (the project's `google-ai-studio-auth-key` rule, in `.gitleaks.toml`, for the `AQ.` keys AI Studio creates since May 2026; gitleaks' own `gcp-api-key` rule covers older `AIza` keys; the output redacts the value), and a clean commit passes.
+
