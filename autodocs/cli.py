@@ -103,11 +103,18 @@ def to_markdown(branch: str, writeup: Writeup) -> str:
     return "\n".join(lines) + "\n"
 
 
+LANGCHAIN_GAPS = ("the token budget, the time limit, the give-up guard, failure injection "
+                  "and per-call tracing")
+
+
 def run_engine(args: argparse.Namespace, api_key: str, model: str, goal: str,
                workspace: Workspace, limits: Limits, failures: FailureInjector, log,
                tracer: Tracer):
     """Run the chosen engine (hand loop or LangChain) on the chosen provider."""
     if args.engine == "langchain":
+        # S5 found this: the framework port enforces only the step cap. Say so, every time.
+        print(f"Warning: the LangChain engine enforces only the step cap. Not enforced: "
+              f"{LANGCHAIN_GAPS}. Use --engine hand (the default) for those.", file=sys.stderr)
         from autodocs.langchain_agent import run_langchain_agent  # heavy import, only if used
         return run_langchain_agent(api_key, model, goal, make_repo_tools(workspace), Writeup,
                                    limits, log=log)

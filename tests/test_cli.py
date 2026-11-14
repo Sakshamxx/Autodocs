@@ -75,3 +75,17 @@ def test_facts_override_the_model_for_unparseable_files():
         writeup.could_not_determine
     assert len(corrections) == 2
     assert correct_against_facts(writeup, ["r/stock.py"]) == []  # already correct
+
+
+def test_langchain_engine_warns_about_the_limits_it_skips(monkeypatch, capsys):
+    """Choosing --engine langchain prints which limits it does not enforce."""
+    import autodocs.langchain_agent as lc
+    from autodocs.cli import LANGCHAIN_GAPS, run_engine
+
+    monkeypatch.setattr(lc, "run_langchain_agent", lambda *a, **k: "ran")
+    monkeypatch.setattr("autodocs.cli.make_repo_tools", lambda workspace: [])
+    args = argparse.Namespace(engine="langchain")
+    assert run_engine(args, "key", "m", "goal", None, None, None, print, None) == "ran"
+    err = capsys.readouterr().err
+    assert "enforces only the step cap" in err and LANGCHAIN_GAPS in err
+
