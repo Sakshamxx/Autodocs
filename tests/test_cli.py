@@ -31,7 +31,7 @@ def test_markdown_lists_unknowns_or_says_nothing():
 def args_for(repo, branch="feat/x", base="main", **extra) -> argparse.Namespace:
     """Arguments as parse_args would build them."""
     return argparse.Namespace(repo=str(repo), branch=branch, base=base, max_steps=12,
-                              budget_tokens=60_000, max_seconds=300, **extra)
+                              budget_tokens=60_000, max_seconds=300, engine="hand", **extra)
 
 
 def test_validation_passes_for_a_real_branch(sample_repo):

@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +35,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=12, help="hard step cap")
     parser.add_argument("--budget-tokens", type=int, default=60_000, help="run token budget")
     parser.add_argument("--max-seconds", type=float, default=300, help="wall-clock limit")
+    parser.add_argument("--engine", choices=["hand", "langchain"], default="hand",
+                        help="the hand-written loop, or the same agent on LangChain")
     parser.add_argument("--out", default="runs", help="folder for run records")
     return parser.parse_args(argv)
 
@@ -88,10 +91,18 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Workspace(args.repo, args.branch, args.base, Path(".work") / safe_name)
     limits = Limits(args.max_steps, args.budget_tokens, args.max_seconds)
     failures = FailureInjector(os.environ.get("AUTODOCS_FAIL_TOOL_CALLS", ""))
-    print(f"AutoDocs · {args.branch} vs {args.base} · {model} · cap {limits.max_steps} steps, "
-          f"{limits.budget_tokens:,} tokens, {limits.max_seconds:.0f} s")
-    run = run_agent(GeminiClient(api_key, model), GOAL.format(branch=args.branch, base=args.base),
-                    make_repo_tools(workspace), Writeup, limits, failures)
+    print(f"AutoDocs ({args.engine}) · {args.branch} vs {args.base} · {model} · "
+          f"cap {limits.max_steps} steps, {limits.budget_tokens:,} tokens, "
+          f"{limits.max_seconds:.0f} s")
+    goal = GOAL.format(branch=args.branch, base=args.base)
+    started = time.monotonic()
+    if args.engine == "langchain":
+        from autodocs.langchain_agent import run_langchain_agent  # heavy import, only if used
+        run = run_langchain_agent(api_key, model, goal, make_repo_tools(workspace), Writeup,
+                                  limits)
+    else:
+        run = run_agent(GeminiClient(api_key, model), goal, make_repo_tools(workspace), Writeup,
+                        limits, failures)
 
     changed = workspace.changed_functions()
     corrections = (correct_against_facts(run.writeup, changed["unparseable"])
@@ -99,7 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     for line in corrections:
         print(f"corrected: {line}")
     record = {
-        "branch": args.branch, "base": args.base, "model": model,
+        "branch": args.branch, "base": args.base, "model": model, "engine": args.engine,
+        "duration_s": round(time.monotonic() - started, 1),
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "stop_reason": run.stop_reason, "steps": run.steps, "tool_calls": run.tool_calls,
         "tool_errors": run.tool_errors, "limits": vars(limits),
