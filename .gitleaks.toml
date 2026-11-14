@@ -1,0 +1,10 @@
+# gitleaks settings for this project: the standard rules, plus one for the new Google AI Studio keys.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-ai-studio-auth-key"
+description = "Google AI Studio auth key (the AQ. format of keys created from May 2026)"
+regex = '''\b(AQ\.[\w-]{50})(?:[\x60'"\s;]|\\[nr]|$)'''
+entropy = 4
+keywords = ["aq."]

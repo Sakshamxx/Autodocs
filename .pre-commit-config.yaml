@@ -1,0 +1,6 @@
+# Checks git runs before every commit. Turn them on once per clone: uv run pre-commit install
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
