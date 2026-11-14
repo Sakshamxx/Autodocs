@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from autodocs.llm import Message, ModelClient, ModelError, Usage, cost_usd
 from autodocs.tools import FailureInjector, Tool, run_tool
+from autodocs.tracing import Tracer
 
 SYSTEM_PROMPT = """You are AutoDocs. You document a finished branch of a Python repository.
 Work in this order: read the diff; open any file you need to understand code the diff uses
@@ -71,11 +72,19 @@ def budget_line(usage: Usage, limits: Limits, step: int, failed_rounds: int = 0)
     return line
 
 
+def for_trace(history: list[Message], limit: int = 1500) -> list[dict]:
+    """A readable, size-limited copy of the conversation for the trace viewer."""
+    return [{"role": m.role, "text": m.text[:limit],
+             "tool_calls": [f"{c.name}({c.args})" for c in m.tool_calls],
+             "tool_results": [str(r["result"])[:limit] for r in m.tool_results]}
+            for m in history]
+
+
 def run_agent(client: ModelClient, goal: str, tools: list[Tool],
               output_schema: type[BaseModel], limits: Limits | None = None,
               failures: FailureInjector | None = None,
               log: Callable[[str], None] = print, clock: Callable[[], float] = time.monotonic,
-              writer: ModelClient | None = None) -> RunResult:
+              writer: ModelClient | None = None, tracer: Tracer | None = None) -> RunResult:
     """Run the loop until it answers, or a step, token or time ceiling is reached.
     With a writer, the cheap client reads and calls tools; the writer writes the final answer."""
     # Stop conditions, written before the code: the run ends when the model answers without
@@ -83,6 +92,7 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
     # token budget or the time limit is reached; or when the model call fails for good.
     limits = limits or Limits()
     failures = failures or FailureInjector()
+    tracer = tracer or Tracer(enabled=False)
     history = [Message(role="user", text=goal)]
     tools_by_name = {tool.name: tool for tool in tools}
     usage, trace, counts = Usage(), [], {"calls": 0, "errors": 0}
@@ -94,6 +104,18 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
         by_model.setdefault(model, Usage()).add(used)
     failed_rounds = 0  # consecutive rounds in which every tool call failed
     started = clock()
+
+    def ask(model_client: ModelClient, system: str, offered: list[Tool], step: int):
+        """One model call, recorded in the trace with its model, usage and cost."""
+        with tracer.model_call(model_client.model, step) as observation:
+            reply = model_client.reply(system, history, offered, output_schema)
+            observation.update(
+                input=for_trace(history),
+                output=reply.text or [f"{c.name}({c.args})" for c in reply.tool_calls],
+                usage_details={"input": reply.usage.input_tokens, "output":
+                               reply.usage.output_tokens + reply.usage.thinking_tokens},
+                cost_details={"total": cost_usd(model_client.model, reply.usage)})
+        return reply
 
     def note(line: str) -> None:
         """Record a trace line and show it."""
@@ -116,8 +138,8 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
             return result(None, f"gave up: every tool call failed {failed_rounds} rounds in a row",
                           step - 1)
         try:
-            reply = client.reply(SYSTEM_PROMPT + budget_line(usage, limits, step, failed_rounds),
-                                 history, tools, output_schema)
+            reply = ask(client, SYSTEM_PROMPT + budget_line(usage, limits, step, failed_rounds),
+                        tools, step)
         except ModelError as exc:
             note(f"step {step} · model call failed: {exc}")
             return result(None, f"model error: {type(exc).__name__}", step)
@@ -127,7 +149,7 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
             # The cheap model has finished reading; the better model writes from the same notes.
             note(f"step {step} · reading done ({client.model}) · {tokens}")
             try:
-                reply = writer.reply(SYSTEM_PROMPT, history, [], output_schema)
+                reply = ask(writer, SYSTEM_PROMPT, [], step)  # traced like any model call
             except ModelError as exc:
                 note(f"step {step} · writer call failed: {exc}")
                 return result(None, f"model error: {type(exc).__name__}", step)
@@ -149,6 +171,7 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
                 outcome = {"error": f"{call.name} failed: injected failure (test switch)"}
             else:
                 outcome = run_tool(tools_by_name, call.name, call.args)
+            tracer.tool_call(call.name, call.args, outcome)
             counts["calls"] += 1
             counts["errors"] += "error" in outcome
             note(f"step {step} · {call.name}({short(call.args, 60)}) → {short(outcome, 70)}")

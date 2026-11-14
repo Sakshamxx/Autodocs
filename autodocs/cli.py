@@ -14,6 +14,7 @@ from autodocs.agent import Limits, run_agent
 from autodocs.llm import PRICES_USD_PER_MILLION, GeminiClient
 from autodocs.repo_tools import Workspace, make_repo_tools
 from autodocs.tools import FailureInjector
+from autodocs.tracing import Tracer
 from autodocs.writeup import Writeup, correct_against_facts
 
 # Cheapest per finished run in the 2026-11-13 comparison (reports/slot1-report.md).
@@ -100,14 +101,20 @@ def main(argv: list[str] | None = None) -> int:
           f"{limits.max_seconds:.0f} s")
     goal = GOAL.format(branch=args.branch, base=args.base)
     started = time.monotonic()
-    if args.engine == "langchain":
-        from autodocs.langchain_agent import run_langchain_agent  # heavy import, only if used
-        run = run_langchain_agent(api_key, model, goal, make_repo_tools(workspace), Writeup,
-                                  limits)
-    else:
-        writer = GeminiClient(api_key, args.writer_model) if args.writer_model else None
-        run = run_agent(GeminiClient(api_key, model), goal, make_repo_tools(workspace), Writeup,
-                        limits, failures, writer=writer)
+    tracer = Tracer()  # on only when the Langfuse keys are set
+    with tracer.run(f"autodocs {args.branch}", goal) as finish_trace:
+        if args.engine == "langchain":
+            from autodocs.langchain_agent import run_langchain_agent  # heavy import, if used
+            run = run_langchain_agent(api_key, model, goal, make_repo_tools(workspace),
+                                      Writeup, limits)
+        else:
+            writer = GeminiClient(api_key, args.writer_model) if args.writer_model else None
+            run = run_agent(GeminiClient(api_key, model), goal, make_repo_tools(workspace),
+                            Writeup, limits, failures, writer=writer, tracer=tracer)
+        finish_trace(output=run.writeup.model_dump() if run.writeup else run.stop_reason,
+                     metadata={"stop_reason": run.stop_reason, "steps": run.steps,
+                               "cost_usd": round(run.cost_usd, 6), "model": model})
+    tracer.flush()  # a short command would otherwise exit before the trace is sent
 
     changed = workspace.changed_functions()
     corrections = (correct_against_facts(run.writeup, changed["unparseable"])
