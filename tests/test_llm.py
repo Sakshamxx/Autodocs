@@ -13,7 +13,9 @@ from autodocs.llm import (
     ModelUnavailable,
     QuotaExceeded,
     RateLimited,
+    Usage,
     classify_429,
+    cost_usd,
 )
 
 
@@ -163,3 +165,20 @@ def test_every_call_carries_the_output_cap(monkeypatch):
     client.reply("s", [Message(role="user", text="hi")], [])
     assert seen == [4096]
 
+
+
+def test_cached_tokens_are_billed_at_the_cache_price():
+    """Cached input costs a tenth here; the rest is billed as normal input."""
+    usage = Usage(input_tokens=1_000_000, output_tokens=0, thinking_tokens=0,
+                  cached_tokens=400_000)
+    assert cost_usd("gemini-3.5-flash-lite", usage) == (600_000 * 0.30 + 400_000 * 0.03) / 1e6
+
+
+def test_cut_off_answer_is_flagged():
+    """finish_reason MAX_TOKENS marks the reply as cut off."""
+    response = types.GenerateContentResponse(
+        candidates=[types.Candidate(finish_reason=types.FinishReason.MAX_TOKENS,
+                                    content=types.Content(role="model",
+                                                          parts=[types.Part(text='{"ti')]))],
+        usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=1))
+    assert lite().to_reply(response).cut_off is True

@@ -11,9 +11,11 @@ from pydantic import BaseModel
 
 # Dollars per 1M tokens, from https://aistudio.google.com/docs/pricing (checked 2026-11-13).
 # Output prices include thinking tokens. Re-check before every batch: prices change.
+# "cached" is the price of input tokens served from Gemini's cache.
 PRICES_USD_PER_MILLION = {
-    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
-    "gemini-3.6-flash": {"input": 0.75, "output": 3.75},  # until 2026-12-31
+    "gemini-3.1-flash-lite": {"input": 0.25, "cached": 0.025, "output": 1.50},
+    "gemini-3.5-flash-lite": {"input": 0.30, "cached": 0.03, "output": 2.50},
+    "gemini-3.6-flash": {"input": 0.75, "cached": 0.075, "output": 3.75},  # until 2026-12-31
 }
 
 # The adapter's own retry policy. The SDK retries these status codes with exponential
@@ -54,25 +56,29 @@ class ModelTimeout(ModelError):
 
 
 @dataclass
-class Usage:
-    """Tokens used by one or more model calls."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-    def add(self, other: "Usage") -> None:
-        """Add another call's tokens to this total."""
-        self.input_tokens += other.input_tokens
-        self.output_tokens += other.output_tokens
-
-
-@dataclass
 class ToolCall:
     """One tool the model asked us to run."""
 
     id: str | None
     name: str
     args: dict[str, Any]
+
+
+@dataclass
+class Usage:
+    """Tokens used by one or more model calls."""
+
+    input_tokens: int = 0  # includes cached_tokens
+    output_tokens: int = 0
+    thinking_tokens: int = 0
+    cached_tokens: int = 0
+
+    def add(self, other: "Usage") -> None:
+        """Add another call's tokens to this total."""
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.thinking_tokens += other.thinking_tokens
+        self.cached_tokens += other.cached_tokens
 
 
 @dataclass
@@ -94,6 +100,7 @@ class ModelReply:
     tool_calls: list[ToolCall]
     usage: Usage
     message: Message
+    cut_off: bool = False  # the answer hit max_output_tokens (thinking counts toward it)
 
 
 class ModelClient(Protocol):
@@ -112,9 +119,12 @@ class ModelClient(Protocol):
 
 
 def cost_usd(model: str, usage: Usage) -> float:
-    """Cost of the usage at the published rates."""
+    """Cost at the published rates: cached input is cheaper; thinking is billed as output."""
     price = PRICES_USD_PER_MILLION[model]
-    return (usage.input_tokens * price["input"] + usage.output_tokens * price["output"]) / 1e6
+    fresh_input = usage.input_tokens - usage.cached_tokens
+    output = usage.output_tokens + usage.thinking_tokens
+    return (fresh_input * price["input"] + usage.cached_tokens * price["cached"]
+            + output * price["output"]) / 1_000_000
 
 
 def classify_429(exc: errors.ClientError) -> ModelError:
@@ -226,10 +236,14 @@ class GeminiClient:
         text = "".join(part.text for part in content.parts or []
                        if part.text and not part.thought)
         meta = response.usage_metadata
-        usage = Usage(meta.prompt_token_count or 0,
-                      (meta.candidates_token_count or 0) + (meta.thoughts_token_count or 0))
+        usage = Usage(input_tokens=meta.prompt_token_count or 0,
+                      output_tokens=meta.candidates_token_count or 0,
+                      thinking_tokens=meta.thoughts_token_count or 0,
+                      cached_tokens=meta.cached_content_token_count or 0)
         message = Message(role="model", text=text, tool_calls=calls, raw=content)
-        return ModelReply(text, calls, usage, message)
+        cut_off = response.candidates[0].finish_reason == types.FinishReason.MAX_TOKENS
+        return ModelReply(text=text, tool_calls=calls, usage=usage, message=message,
+                          cut_off=cut_off)
 
     def count_tokens(self, history: list[Message]) -> int:
         """Ask Gemini how many input tokens the messages are (the system prompt isn't counted)."""

@@ -51,6 +51,7 @@ class RunResult:
     tool_calls: int = 0
     tool_errors: int = 0
     trace: list[str] = field(default_factory=list)
+    usage_by_model: dict[str, Usage] = field(default_factory=dict)
 
 
 def short(value, limit: int = 80) -> str:
@@ -61,7 +62,7 @@ def short(value, limit: int = 80) -> str:
 
 def budget_line(usage: Usage, limits: Limits, step: int, failed_rounds: int = 0) -> str:
     """The note the engine writes into every turn: budget, and a nudge if tools keep failing."""
-    used = usage.input_tokens + usage.output_tokens  # thinking is counted in output
+    used = usage.input_tokens + usage.output_tokens + usage.thinking_tokens
     line = (f"\n\nBudget: {used:,} of {limits.budget_tokens:,} tokens used; "
             f"step {step} of {limits.max_steps}.")
     if failed_rounds >= FAILED_ROUNDS_BEFORE_NUDGE:
@@ -74,8 +75,9 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
               output_schema: type[BaseModel], limits: Limits | None = None,
               failures: FailureInjector | None = None,
               log: Callable[[str], None] = print, clock: Callable[[], float] = time.monotonic,
-              ) -> RunResult:
-    """Run the loop until it answers, or a step, token or time ceiling is reached."""
+              writer: ModelClient | None = None) -> RunResult:
+    """Run the loop until it answers, or a step, token or time ceiling is reached.
+    With a writer, the cheap client reads and calls tools; the writer writes the final answer."""
     # Stop conditions, written before the code: the run ends when the model answers without
     # asking for a tool and the answer fits output_schema (done); or when the step cap, the
     # token budget or the time limit is reached; or when the model call fails for good.
@@ -84,6 +86,12 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
     history = [Message(role="user", text=goal)]
     tools_by_name = {tool.name: tool for tool in tools}
     usage, trace, counts = Usage(), [], {"calls": 0, "errors": 0}
+    by_model: dict[str, Usage] = {}
+
+    def count_usage(model: str, used: Usage) -> None:
+        """Add a call's tokens to the run total and to its model's total."""
+        usage.add(used)
+        by_model.setdefault(model, Usage()).add(used)
     failed_rounds = 0  # consecutive rounds in which every tool call failed
     started = clock()
 
@@ -94,11 +102,12 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
 
     def result(writeup, reason: str, step: int) -> RunResult:
         """Package the run's outcome, keeping all the work done so far."""
-        return RunResult(writeup, reason, step, usage, cost_usd(client.model, usage),
-                         counts["calls"], counts["errors"], trace)
+        cost = sum(cost_usd(model, used) for model, used in by_model.items())
+        return RunResult(writeup, reason, step, usage, cost, counts["calls"], counts["errors"],
+                         trace, by_model)
 
     for step in range(1, limits.max_steps + 1):
-        spent = usage.input_tokens + usage.output_tokens  # thinking is counted in output
+        spent = usage.input_tokens + usage.output_tokens + usage.thinking_tokens
         if spent >= limits.budget_tokens:
             return result(None, f"token budget of {limits.budget_tokens:,} spent", step - 1)
         if clock() - started >= limits.max_seconds:
@@ -112,11 +121,24 @@ def run_agent(client: ModelClient, goal: str, tools: list[Tool],
         except ModelError as exc:
             note(f"step {step} · model call failed: {exc}")
             return result(None, f"model error: {type(exc).__name__}", step)
-        usage.add(reply.usage)
-        history.append(reply.message)
+        count_usage(client.model, reply.usage)
         tokens = f"{reply.usage.input_tokens:,} in / {reply.usage.output_tokens:,} out"
+        if not reply.tool_calls and writer is not None:
+            # The cheap model has finished reading; the better model writes from the same notes.
+            note(f"step {step} · reading done ({client.model}) · {tokens}")
+            try:
+                reply = writer.reply(SYSTEM_PROMPT, history, [], output_schema)
+            except ModelError as exc:
+                note(f"step {step} · writer call failed: {exc}")
+                return result(None, f"model error: {type(exc).__name__}", step)
+            count_usage(writer.model, reply.usage)
+            tokens = f"{reply.usage.input_tokens:,} in / {reply.usage.output_tokens:,} out"
+        history.append(reply.message)
+        if reply.cut_off:
+            note(f"step {step} · answer cut off at the output cap · {tokens}")
+            return result(None, "output cap reached (thinking counts toward it)", step)
         if not reply.tool_calls:
-            note(f"step {step} · final answer · {tokens}")
+            note(f"step {step} · final answer ({(writer or client).model}) · {tokens}")
             try:
                 return result(output_schema.model_validate_json(reply.text), "done", step)
             except ValidationError as exc:

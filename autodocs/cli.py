@@ -35,6 +35,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=12, help="hard step cap")
     parser.add_argument("--budget-tokens", type=int, default=60_000, help="run token budget")
     parser.add_argument("--max-seconds", type=float, default=300, help="wall-clock limit")
+    parser.add_argument("--writer-model", default=os.environ.get("AUTODOCS_WRITER_MODEL"),
+                        help="better model for the final write-up (default: same model)")
     parser.add_argument("--engine", choices=["hand", "langchain"], default="hand",
                         help="the hand-written loop, or the same agent on LangChain")
     parser.add_argument("--out", default="runs", help="folder for run records")
@@ -45,8 +47,10 @@ def validate(args: argparse.Namespace, api_key: str | None, model: str) -> None:
     """Check everything that can be checked for free, before the first model call."""
     if not api_key:
         raise InputError("GEMINI_API_KEY is not set (copy .env.example to .env)")
-    if model not in PRICES_USD_PER_MILLION:
-        raise InputError(f"no price recorded for {model}; known: {sorted(PRICES_USD_PER_MILLION)}")
+    for name in filter(None, [model, getattr(args, "writer_model", None)]):
+        if name not in PRICES_USD_PER_MILLION:
+            raise InputError(f"no price recorded for {name}; "
+                             f"known: {sorted(PRICES_USD_PER_MILLION)}")
     if args.max_steps < 1 or args.budget_tokens < 1_000 or args.max_seconds < 10:
         raise InputError("limits too small: need max-steps ≥ 1, budget ≥ 1,000, seconds ≥ 10")
     repo = Path(args.repo)
@@ -101,8 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         run = run_langchain_agent(api_key, model, goal, make_repo_tools(workspace), Writeup,
                                   limits)
     else:
+        writer = GeminiClient(api_key, args.writer_model) if args.writer_model else None
         run = run_agent(GeminiClient(api_key, model), goal, make_repo_tools(workspace), Writeup,
-                        limits, failures)
+                        limits, failures, writer=writer)
 
     changed = workspace.changed_functions()
     corrections = (correct_against_facts(run.writeup, changed["unparseable"])
@@ -111,11 +116,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"corrected: {line}")
     record = {
         "branch": args.branch, "base": args.base, "model": model, "engine": args.engine,
+        "writer_model": args.writer_model,
         "duration_s": round(time.monotonic() - started, 1),
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "stop_reason": run.stop_reason, "steps": run.steps, "tool_calls": run.tool_calls,
         "tool_errors": run.tool_errors, "limits": vars(limits),
         "usage": vars(run.usage), "cost_usd": round(run.cost_usd, 6),
+        "usage_by_model": {name: vars(used) for name, used in run.usage_by_model.items()},
         "changed": changed, "corrections": corrections,
         "writeup": run.writeup.model_dump() if run.writeup else None,
         "docstring_patch": workspace.docstring_patch(), "trace": run.trace,

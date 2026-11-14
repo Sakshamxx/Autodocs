@@ -180,3 +180,44 @@ def test_tool_error_is_sent_without_a_traceback(fake_client):
     run_agent(client, "goal", [Tool.from_function(missing)], Writeup, log=lambda _: None)
     sent = client.histories[1][-1].tool_results[0]["result"]
     assert sent == {"error": "x.py is not a file in this repository"}
+
+
+def test_writer_model_writes_the_final_answer(fake_client):
+    """The reader calls tools; the writer gets the history with no tools and answers."""
+
+    class Writer(fake_client):
+        """A pricier model that only writes."""
+
+        model = "gemini-3.6-flash"
+    reader = fake_client([[("count_lines", {"path": "a"})], "reader would answer here"])
+    writer = Writer([ANSWER])
+    tool_lists = []
+    original = writer.reply
+
+    def spy(system, history, tools, output_schema=None):
+        """Remember which tools the writer was offered."""
+        tool_lists.append(tools)
+        return original(system, history, tools, output_schema)
+    writer.reply = spy
+    run = run_agent(reader, "goal", [Tool.from_function(count_lines)], Writeup,
+                    writer=writer, log=lambda _: None)
+    assert run.stop_reason == "done" and tool_lists == [[]]
+    assert set(run.usage_by_model) == {"gemini-3.5-flash-lite", "gemini-3.6-flash"}
+    assert run.usage_by_model["gemini-3.5-flash-lite"].input_tokens == 2000
+    expected = (2000 * 0.30 + 200 * 2.50 + 1000 * 0.75 + 100 * 3.75) / 1_000_000
+    assert abs(run.cost_usd - expected) < 1e-12
+
+
+def test_cut_off_answer_stops_with_a_clear_reason(fake_client):
+    """A truncated answer is reported as the output cap, not as a schema error."""
+
+    class CutOff(fake_client):
+        """Return a reply marked as cut off."""
+
+        def reply(self, system, history, tools, output_schema=None):
+            """Pretend the answer hit max_output_tokens."""
+            answer = super().reply(system, history, tools, output_schema)
+            answer.cut_off = True
+            return answer
+    run = run_agent(CutOff(['{"title": "fe']), "goal", [], Writeup, log=lambda _: None)
+    assert run.stop_reason == "output cap reached (thinking counts toward it)"

@@ -29,9 +29,11 @@ def to_langchain_tool(tool: Tool, tools_by_name: dict[str, Tool]) -> StructuredT
 def usage_of(message: AIMessage) -> Usage:
     """Read token counts from LangChain's usage_metadata."""
     meta = message.usage_metadata or {}
-    # LangChain's output_tokens already include reasoning (thinking), as our Usage does.
+    thinking = (meta.get("output_token_details") or {}).get("reasoning", 0)
+    cached = (meta.get("input_token_details") or {}).get("cache_read", 0)
     return Usage(input_tokens=meta.get("input_tokens", 0),
-                 output_tokens=meta.get("output_tokens", 0))
+                 output_tokens=meta.get("output_tokens", 0) - thinking,
+                 thinking_tokens=thinking, cached_tokens=cached)
 
 
 def run_langchain_agent(api_key: str, model: str, goal: str, tools: list[Tool],
@@ -82,4 +84,4 @@ def run_langchain_agent(api_key: str, model: str, goal: str, tools: list[Tool],
     reason = "done" if writeup else f"no structured answer (model call limit {limits.max_steps})"
     note(f"finished in {elapsed:.1f} s · {reason}")
     return RunResult(writeup, reason, step, usage, cost_usd(model, usage), counts["calls"],
-                     counts["errors"], trace)
+                     counts["errors"], trace, {model: usage})

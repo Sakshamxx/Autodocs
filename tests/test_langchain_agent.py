@@ -22,9 +22,9 @@ def test_wrapped_tool_keeps_our_schema_and_errors_as_data():
 
 
 def test_usage_is_read_from_usage_metadata():
-    """Input and output tokens come from LangChain's usage_metadata (thinking included)."""
+    """Tokens come from LangChain's usage_metadata; reasoning is split out as thinking."""
     message = AIMessage(content="", usage_metadata={
         "input_tokens": 1200, "output_tokens": 90, "total_tokens": 1290,
         "output_token_details": {"reasoning": 40}})
     usage = usage_of(message)
-    assert (usage.input_tokens, usage.output_tokens) == (1200, 90)
+    assert (usage.input_tokens, usage.output_tokens, usage.thinking_tokens) == (1200, 50, 40)

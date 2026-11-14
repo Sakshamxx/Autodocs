@@ -35,7 +35,8 @@ def table(records: list[dict]) -> str:
     for r in records:
         covered, total, _ = coverage(r)
         unknowns = len(r["writeup"]["could_not_determine"]) if r["writeup"] else "-"
-        rows.append(f"| `{r['branch']}` | {r['model']} | {r['stop_reason']} | {r['steps']} | "
+        model = r["model"] + (f" → {r['writer_model']}" if r.get("writer_model") else "")
+        rows.append(f"| `{r['branch']}` | {model} | {r['stop_reason'][:60]} | {r['steps']} | "
                     f"{r['tool_calls']} | {r['usage']['input_tokens']:,} | "
                     f"{r['usage']['output_tokens'] + r['usage'].get('thinking_tokens', 0):,} | "
                     f"{r['cost_usd']:.5f} | {covered}/{total} | {docstrings_edited(r)} | "
