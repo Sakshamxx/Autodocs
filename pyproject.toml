@@ -1,8 +1,9 @@
 [project]
 name = "autodocs"
-version = "0.1.0"
+version = "2.0.0"
 description = "AutoDocs: an agent that documents a finished branch (built session by session)."
 readme = "README.md"
+license = "LicenseRef-Course-Owned"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "flask==3.1.3",
