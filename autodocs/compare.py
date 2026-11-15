@@ -13,7 +13,9 @@ ROWS = [
     ("steps", lambda r: r["steps"]),
     ("tool calls (errors)", lambda r: f"{r['tool_calls']} ({r.get('tool_errors', 0)})"),
     ("input tokens", lambda r: f"{r['usage']['input_tokens']:,}"),
-    ("output tokens", lambda r: f"{r['usage']['output_tokens']:,}"),  # thinking included
+    # Output includes thinking; since S6 the record keeps thinking_tokens apart, so add it back.
+    ("output tokens",
+     lambda r: f"{r['usage']['output_tokens'] + r['usage'].get('thinking_tokens', 0):,}"),
     ("cost (USD)", lambda r: f"{r['cost_usd']:.5f}"),
     ("duration (s)", lambda r: r.get("duration_s", "-")),
     ("functions covered", lambda r: "{}/{}".format(*coverage(r)[:2])),

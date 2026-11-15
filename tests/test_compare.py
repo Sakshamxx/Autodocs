@@ -17,3 +17,10 @@ def test_compare_table():
     table = compare({**RECORD, "trace": []}, b)
     assert "| engine | hand | langchain |" in table
     assert "| cost (USD) | 0.00170 | 0.00400 |" in table
+
+
+def test_output_tokens_include_thinking():
+    """Records since S6 keep thinking apart; the comparison adds it back into output."""
+    usage = {**RECORD["usage"], "output_tokens": 934, "thinking_tokens": 284}
+    table = compare({**RECORD, "usage": usage, "trace": []}, {**RECORD, "trace": []})
+    assert "| output tokens | 1,218 |" in table
