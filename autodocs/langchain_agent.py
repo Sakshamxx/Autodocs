@@ -26,6 +26,11 @@ def to_langchain_tool(tool: Tool, tools_by_name: dict[str, Tool]) -> StructuredT
                                         args_schema=tool.args_model)
 
 
+def is_tool_error(message: ToolMessage) -> bool:
+    """True for a failed tool result: LangChain's own error (for example bad arguments) or ours."""
+    return message.status == "error" or str(message.content).startswith('{"error"')
+
+
 def usage_of(message: AIMessage) -> Usage:
     """Read token counts from LangChain's usage_metadata."""
     meta = message.usage_metadata or {}
@@ -77,7 +82,7 @@ def run_langchain_agent(api_key: str, model: str, goal: str, tools: list[Tool],
                          f"{usage_of(message).input_tokens:,} in")
                 elif isinstance(message, ToolMessage):
                     counts["calls"] += 1
-                    counts["errors"] += str(message.content).startswith('{"error"')
+                    counts["errors"] += is_tool_error(message)
                     note(f"step {step} · {message.name} → {short(message.content, 70)}")
     writeup = final_state.get("structured_response")
     elapsed = time.monotonic() - started
